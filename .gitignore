@@ -1,0 +1,49 @@
+# Build directories
+cmake-build-*/
+build/
+out/
+debug/
+release/
+
+# CMake in-source leftovers
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+rules.ninja
+CMakeDoxyfile.in
+CMakeDoxygenDefaults.cmake
+compile_commands.json
+.cache/
+
+# Compiled artifacts
+*.exe
+*.dll
+*.a
+*.lib
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# IDE: CLion / JetBrains
+.idea/
+*.iml
+
+# IDE: Visual Studio
+.vs/
+*.vcxproj*
+*.sln
+*.user
+
+# Test recordings
+*.mp4
+recording_*.mp4
+
+# OS
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

@@ -1,0 +1,30 @@
+# Default: normalize to LF in repo, checkout per platform
+* text=auto
+
+# Sources & docs: always LF
+*.cpp   text diff=cpp
+*.h     text diff=cpp
+*.md    text
+*.txt   text
+*.cmake text
+CMakeLists.txt text
+.gitignore     text
+.gitattributes text
+
+# Windows-specific resources: always CRLF
+*.rc       text eol=crlf
+*.manifest text eol=crlf
+*.bat      text eol=crlf
+*.ps1      text eol=crlf
+
+# Binaries: no processing
+*.mp4  binary
+*.exe  binary
+*.dll  binary
+*.a    binary
+*.lib  binary
+*.o    binary
+*.obj  binary
+*.pdb  binary
+*.png  binary
+*.ico  binary
