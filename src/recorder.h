@@ -41,14 +41,14 @@ public:
     bool isRunning() const { return running_.load(); }
     bool isPaused() const { return paused_.load(); }
     const RecorderSettings& settings() const { return settings_; }
-    std::string backendName() const;
     std::string lastError() const;
 
     // Live stats (poll freely from the UI thread).
     std::atomic<std::uint64_t> statFrames{0};
     std::atomic<std::int64_t> statActiveNs{0};   // active (unpaused) time
     std::atomic<std::uint64_t> statBytes{0};
-    std::atomic<double> statFps{0};              // recent fps
+    std::atomic<double> statFps{0};              // recent fps (1 s window)
+    std::atomic<double> statAvgFps{0};           // average fps (consistent snapshot)
     std::atomic<std::uint64_t> statBitrateBps{0};
     std::atomic<bool> statHadError{false};
 
@@ -65,7 +65,6 @@ private:
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> pauseRequested_{false};
     std::atomic<bool> paused_{false};
-    std::atomic<const char*> backend_{nullptr};
     std::thread thread_;
     mutable std::mutex errMutex_;
     std::string lastError_;
@@ -74,5 +73,7 @@ private:
 // Bitrate suggestion: ~0.12 bits per pixel per frame (1080p30 ~ 7.5 Mbps).
 std::uint64_t autoBitrate(int width, int height, int fps);
 
-// recording_<timestamp>.mp4 inside the user's Videos folder (fallback: cwd).
-std::wstring defaultRecordingPath();
+// "<Videos>/Recording-YYYYMMDD-HHMMSS.mp4" with literal date/time tokens.
+std::wstring defaultRecordingTemplate();
+// Replaces YYYYMMDD / HHMMSS tokens in the path with the current time.
+std::wstring expandRecordingPath(const std::wstring& path);

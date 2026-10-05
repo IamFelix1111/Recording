@@ -1,1 +1,48 @@
+#include "resource.h"
+
 1 24 "gui.manifest"
+1 ICON "icon.ico"
+
+// UTF-8 encoded; Simplified Chinese. Translate by editing this table only.
+#pragma code_page(65001)
+
+STRINGTABLE
+BEGIN
+    IDS_APP_TITLE        "屏幕录制"
+    IDS_TITLE_REC_FMT    "(%ls) %ls  %ls %.1f fps"
+    IDS_TITLE_STATE_FMT  "(%ls) %ls"
+
+    IDS_STATE_READY      "就绪"
+    IDS_STATE_PREPARING  "准备中"
+    IDS_STATE_RECORDING  "录制中"
+    IDS_STATE_PAUSED     "暂停"
+    IDS_STATE_SAVING     "保存中"
+    IDS_STATUS_SAVED     "保存成功"
+    IDS_STATUS_ERROR     "录制出错，文件可能不完整"
+
+    IDS_BTN_START        "开始"
+    IDS_BTN_STOP         "停止"
+    IDS_BTN_PAUSE        "暂停"
+    IDS_BTN_RESUME       "继续"
+    IDS_BROWSE           "浏览..."
+
+    IDS_LBL_MONITOR      "显示器"
+    IDS_LBL_FPS          "帧率"
+    IDS_LBL_BITRATE      "码率"
+    IDS_LBL_PATH         "输出"
+    IDS_CHK_CURSOR       "录制鼠标指针"
+    IDS_CHK_GDI          "使用 GDI 兼容后端"
+    IDS_MONITOR_ALL      "所有显示器（虚拟桌面）"
+    IDS_MONITOR_FMT      "%d: %ldx%ld%ls"
+    IDS_MONITOR_PRIMARY  "（主）"
+    IDS_BITRATE_AUTO     "自动"
+
+    IDS_STATS_TIME_FMT   "时长 %ls"
+    IDS_STATS_FRAMES_FMT "帧数 %llu"
+    IDS_STATS_FPS_FMT    "%.1f fps"
+    IDS_STATS_SIZE_FMT   "%.1f MB"
+    IDS_STATS_AVG_FMT    "平均 %.1f fps"
+
+    IDS_ERR_TITLE        "错误"
+    IDS_CONFIRM_QUIT     "正在录制，停止并退出？"
+END

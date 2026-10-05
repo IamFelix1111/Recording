@@ -27,7 +27,9 @@ std::uint64_t autoBitrate(int width, int height, int fps) {
     return b;
 }
 
-std::wstring defaultRecordingPath() {
+namespace {
+
+std::wstring videosDir() {
     std::wstring dir = L".";
     wchar_t* videos = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &videos)) &&
@@ -35,14 +37,37 @@ std::wstring defaultRecordingPath() {
         dir = videos;
         CoTaskMemFree(videos);
     }
+    return dir;
+}
+
+void replaceAllW(std::wstring& s, const std::wstring& tok, const std::wstring& val) {
+    if (tok.empty()) return;
+    size_t pos = 0;
+    while ((pos = s.find(tok, pos)) != std::wstring::npos) {
+        s.replace(pos, tok.size(), val);
+        pos += val.size();
+    }
+}
+
+}  // namespace
+
+std::wstring defaultRecordingTemplate() {
+    std::wstring dir = videosDir();
+    if (!dir.empty() && dir.back() != L'\\') dir += L'\\';
+    return dir + L"Recording-YYYYMMDD-HHMMSS.mp4";
+}
+
+std::wstring expandRecordingPath(const std::wstring& path) {
     std::time_t t = std::time(nullptr);
     std::tm tm{};
     localtime_s(&tm, &t);
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tm);
-    std::wstring ts(buf, buf + std::strlen(buf));
-    if (!dir.empty() && dir.back() != L'\\') dir += L'\\';
-    return dir + L"recording_" + ts + L".mp4";
+    wchar_t date[16], tod[16];
+    swprintf(date, 16, L"%04d%02d%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    swprintf(tod, 16, L"%02d%02d%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    std::wstring p = path;
+    replaceAllW(p, L"YYYYMMDD", date);  // month: tm_mon is 0-based
+    replaceAllW(p, L"HHMMSS", tod);     // minute: second pair of HHMMSS
+    return p;
 }
 
 RecorderSession::~RecorderSession() {
@@ -60,11 +85,6 @@ std::string RecorderSession::lastError() const {
     return lastError_;
 }
 
-std::string RecorderSession::backendName() const {
-    const char* n = backend_.load();
-    return n ? n : "";
-}
-
 bool RecorderSession::start(const RecorderSettings& s, std::string& err) {
     settings_ = s;
     stopRequested_ = false;
@@ -74,9 +94,9 @@ bool RecorderSession::start(const RecorderSettings& s, std::string& err) {
     statActiveNs = 0;
     statBytes = 0;
     statFps = 0.0;
+    statAvgFps = 0.0;
     statBitrateBps = 0;
     statHadError = false;
-    backend_.store(nullptr);
 
     std::promise<std::string> init;
     auto initFuture = init.get_future();
@@ -122,7 +142,6 @@ void RecorderSession::worker(std::promise<std::string> initResult) {
                                    settings_.drawCursor, err);
         }
         if (!cap) break;
-        backend_.store(cap->name());
         int rx = 0, ry = 0, rw = 0, rh = 0;
         cap->screenRect(rx, ry, rw, rh);
         capX = rx;
@@ -212,6 +231,8 @@ void RecorderSession::runLoop(IScreenCapture& cap, VideoEncoder& encoder) {
             activeStart = Clock::now();
             lastWall = Clock::now() - interval;
             deadline = Clock::now();
+            lastStat = Clock::now();  // fresh fps window after resume
+            lastFrames = frames;
         }
 
         const auto now = Clock::now();
@@ -252,13 +273,20 @@ void RecorderSession::runLoop(IScreenCapture& cap, VideoEncoder& encoder) {
 
         if (Clock::now() - lastStat >= std::chrono::seconds(1)) {
             const std::int64_t total = totalActiveNs();
-            const double secs = static_cast<double>(total) / 1e9;
             activeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(
                             Clock::now() - activeStart)
                             .count();
             activeStart = Clock::now();
             statActiveNs = total;
-            statFps = secs > 0.5 ? (frames - lastFrames) : 0.0;
+            // Divide by the real elapsed window (1.00-1.03 s) so the shown
+            // fps carries a meaningful fractional part.
+            const double dt =
+                std::chrono::duration<double>(Clock::now() - lastStat).count();
+            statFps = dt > 0.25 ? static_cast<double>(frames - lastFrames) / dt
+                                : statFps.load();
+            // Average from the same snapshot (frames and time are consistent).
+            const double totalSecs = static_cast<double>(total) / 1e9;
+            statAvgFps = totalSecs > 0.5 ? frames / totalSecs : 0.0;
             lastFrames = frames;
             // Real-time size: encoder byte count; fall back to flushed file size.
             const auto live = encoder.bytesWritten();
@@ -275,4 +303,5 @@ void RecorderSession::runLoop(IScreenCapture& cap, VideoEncoder& encoder) {
     statActiveNs = total;
     const double secs = static_cast<double>(total) / 1e9;
     statFps = secs > 0.5 ? frames / secs : 0.0;
+    statAvgFps = statFps.load();
 }

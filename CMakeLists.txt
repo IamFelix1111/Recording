@@ -26,10 +26,6 @@ if(MSVC)
     target_compile_options(recorder_core PRIVATE /utf-8)
 endif()
 
-# Command line front-end.
-add_executable(Recording src/main.cpp)
-target_link_libraries(Recording PRIVATE recorder_core)
-
 # GUI front-end (Win32, common controls v6 via embedded manifest).
 add_executable(RecordingGui WIN32
     src/gui.cpp
@@ -42,15 +38,11 @@ if(NOT MSVC)
 endif()
 
 if(NOT MSVC)
-    # Static-link the C/C++ runtimes so the exes need only libwinpthread-1.dll,
-    # which is copied next to the binaries below.
-    foreach(tgt IN ITEMS Recording RecordingGui)
-        target_link_options(${tgt} PRIVATE -static-libgcc -static-libstdc++)
-    endforeach()
+    # Static-link the C/C++ runtimes so the exe needs only libwinpthread-1.dll,
+    # which is copied next to the binary below.
+    target_link_options(RecordingGui PRIVATE -static-libgcc -static-libstdc++)
     get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    foreach(tgt IN ITEMS Recording RecordingGui)
-        add_custom_command(TARGET ${tgt} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_mingw_bin}/libwinpthread-1.dll" $<TARGET_FILE_DIR:${tgt}>)
-    endforeach()
+    add_custom_command(TARGET RecordingGui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_mingw_bin}/libwinpthread-1.dll" $<TARGET_FILE_DIR:RecordingGui>)
 endif()
