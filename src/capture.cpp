@@ -67,8 +67,8 @@ bool loadCursorImages(HCURSOR cursor, IconImages& out) {
             break;
         }
         if (out.width <= 0 || out.height <= 0) break;
-        out.hotX = ii.xHotspot;
-        out.hotY = ii.yHotspot;
+        out.hotX = static_cast<int>(ii.xHotspot);
+        out.hotY = static_cast<int>(ii.yHotspot);
 
         if (out.hasColor && ii.hbmColor) {
             BITMAPINFO bi{};
@@ -84,8 +84,7 @@ bool loadCursorImages(HCURSOR cursor, IconImages& out) {
                 break;
         }
         if (ii.hbmMask) {
-            BITMAP bmMask{};
-            GetObjectW(ii.hbmMask, sizeof(bmMask), &bmMask);
+            GetObjectW(ii.hbmMask, sizeof(bmMask), &bmMask);  // fill outer decl
             BITMAPINFO bi{};
             bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
             bi.bmiHeader.biWidth = out.width;
@@ -191,7 +190,7 @@ public:
                 err = "monitor index out of range";
                 return false;
             }
-            HMONITOR hmon = static_cast<HMONITOR>(mons[monitorIndex].handle);
+            auto hmon = static_cast<HMONITOR>(mons[monitorIndex].handle);
             MONITORINFO mi{};
             mi.cbSize = sizeof(mi);
             if (!GetMonitorInfoW(hmon, &mi)) {
@@ -232,9 +231,9 @@ public:
         return true;
     }
 
-    const char* name() const override { return "GDI BitBlt"; }
-    int width() const override { return width_; }
-    int height() const override { return height_; }
+    [[nodiscard]] const char* name() const override { return "GDI BitBlt"; }
+    [[nodiscard]] int width() const override { return width_; }
+    [[nodiscard]] int height() const override { return height_; }
     void screenRect(int& x, int& y, int& w, int& h) const override {
         x = static_cast<int>(rect_.left);
         y = static_cast<int>(rect_.top);
@@ -361,9 +360,9 @@ public:
         return true;
     }
 
-    const char* name() const override { return "DXGI Desktop Duplication"; }
-    int width() const override { return width_; }
-    int height() const override { return height_; }
+    [[nodiscard]] const char* name() const override { return "DXGI Desktop Duplication"; }
+    [[nodiscard]] int width() const override { return width_; }
+    [[nodiscard]] int height() const override { return height_; }
     void screenRect(int& x, int& y, int& w, int& h) const override {
         x = originX_;
         y = originY_;
@@ -479,8 +478,8 @@ std::vector<MonitorInfo> listMonitors() {
         reinterpret_cast<LPARAM>(&mons));
     if (!mons.empty() && !mons[0].primary) {
         // Put the primary monitor first so index 0 is predictable.
-        auto it = std::find_if(mons.begin(), mons.end(),
-                               [](const MonitorInfo& m) { return m.primary; });
+        auto it = std::ranges::find_if(
+            mons, [](const MonitorInfo& m) { return m.primary; });
         if (it != mons.end()) std::swap(mons[0], *it);
         for (size_t i = 0; i < mons.size(); ++i) mons[i].index = static_cast<int>(i);
     }

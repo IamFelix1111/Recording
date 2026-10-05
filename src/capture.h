@@ -24,9 +24,9 @@ struct VideoFrame {
 class IScreenCapture {
 public:
     virtual ~IScreenCapture() = default;
-    virtual const char* name() const = 0;
-    virtual int width() const = 0;
-    virtual int height() const = 0;
+    [[nodiscard]] virtual const char* name() const = 0;
+    [[nodiscard]] virtual int width() const = 0;
+    [[nodiscard]] virtual int height() const = 0;
     // Screen coordinates of the captured region (for UI overlays).
     virtual void screenRect(int& x, int& y, int& w, int& h) const = 0;
     // Blocks up to timeoutMs waiting for a frame. Returns nullptr only on error.

@@ -12,6 +12,8 @@
 - **录制边框**：录制时在采集区域四周显示红色边框（暂停变黄），置顶且鼠标穿透，
   通过 `WDA_EXCLUDEFROMCAPTURE` 排除捕获——边框不会录进视频（Windows 10 2004+）
 - **实时统计**：时长 / 帧数 / fps / 文件大小（MiB，与资源管理器一致）实时更新，标题栏同步显示录制状态
+- **状态图标**：标题栏与任务栏图标随状态变色（就绪绿/录制红/暂停黄/准备中与保存中灰），录制中任务栏红点缓慢闪烁；
+  图标为程序化预生成缓存（SDF + 超采样抗锯齿），切换零开销，低配设备亦流畅
 - **设置记忆**：输出目录、显示器、帧率、码率、鼠标、后端等选项持久化，重启后自动恢复
 - **自动建目录**：输出目录不存在时自动创建
 
@@ -46,7 +48,10 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 | `src/recorder.h/.cpp`           | 录制会话核心：工作线程、节奏控制、暂停/停止、实时统计             |
 | `src/capture.h/.cpp`            | 采集后端（DXGI / GDI）、屏幕区域信息与鼠标指针合成                |
 | `src/encoder.h/.cpp`            | Media Foundation H.264 Sink Writer 封装与实时字节统计             |
-| `src/gui.cpp`                   | GUI 前端：Win32 控件、状态机、红色录制边框、设置持久化            |
+| `src/gui.cpp`                   | GUI 主文件：窗口生命周期、控件布局、录制流程、红色录制边框        |
+| `src/icons.cpp`                 | 状态图标（预生成缓存、录制闪烁）与抗锯齿状态圆点                  |
+| `src/settings.cpp`              | 设置持久化与 UI → 录制参数映射                                    |
+| `src/gui_internal.h`            | GUI 内部共享头：`App`/`UiState`、共享声明、组合框索引常量         |
 | `src/resource.h` / `src/gui.rc` | 字符串表（全部 UI 文案，**翻译只需改 gui.rc**）与公共控件 v6 清单 |
 
 详细架构（模块地图、数据流、GUI 状态机、线程模型、MinGW 陷阱清单）见 [ARCHITECTURE.md](ARCHITECTURE.md)。

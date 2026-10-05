@@ -1,65 +1,21 @@
 // Windows screen recorder - Win32 GUI front-end (no external dependencies).
-// Settings on top, live stats in the middle, start/pause/stop at the bottom.
+// Window lifecycle, control layout, recording flow and the border frame.
+// State icons live in icons.cpp, settings persistence in settings.cpp.
 
 #include <windows.h>
 #include <windowsx.h>
 #include <objbase.h>
 #include <commctrl.h>
 #include <commdlg.h>
-#include <shlobj.h>
 
 #include <cstdio>
 #include <cwchar>
 #include <algorithm>
 #include <filesystem>
 #include <memory>
-#include <string>
-#include <vector>
 
-#include "capture.h"
-#include "recorder.h"
-#include "resource.h"
+#include "gui_internal.h"
 
-namespace {
-
-constexpr int IDC_MONITOR = 1001;
-constexpr int IDC_FPS = 1002;
-constexpr int IDC_BITRATE = 1003;
-constexpr int IDC_PATH = 1004;
-constexpr int IDC_BROWSE = 1005;
-constexpr int IDC_CURSOR = 1006;
-constexpr int IDC_GDI = 1007;
-constexpr int IDC_START = 1008;  // dual purpose: 开始 (idle) / 停止 (recording)
-constexpr int IDC_PAUSE = 1009;
-constexpr UINT WM_APP_FINISHED = WM_APP + 1;
-constexpr UINT TIMER_POLL = 1;
-
-// UI state machine - drives the status dot color and enabled controls.
-//   Ready --(开始)--> Preparing --ok--> Recording <--> Paused
-//                                            |
-//              Saving <--(停止/退出)---------+
-//                 \--finished--> Ready
-enum class UiState { Ready, Preparing, Recording, Paused, Saving };
-
-struct App {
-    HWND wnd = nullptr;
-    HWND lblMonitor = nullptr, comboMonitor = nullptr;
-    HWND lblFps = nullptr, comboFps = nullptr;
-    HWND lblBitrate = nullptr, comboBitrate = nullptr;
-    HWND lblPath = nullptr, editPath = nullptr, btnBrowse = nullptr;
-    HWND chkCursor = nullptr, chkGdi = nullptr;
-    HWND btnStart = nullptr, btnPause = nullptr;  // btnStart toggles 开始/停止
-    HWND stDot = nullptr, stStatus = nullptr;
-    HWND stTime = nullptr, stFps = nullptr, stSize = nullptr;
-    HFONT font = nullptr;
-    UINT dpi = 96;
-    bool quitting = false;
-    bool loading = false;  // suppress auto-save while restoring settings
-    UiState state = UiState::Ready;
-    std::vector<MonitorInfo> monitors;
-    std::unique_ptr<RecorderSession> sess;
-    bool borderPaused = false;  // color currently shown by the border frame
-};
 App g;
 HWND g_borderWnd = nullptr;
 
@@ -69,7 +25,7 @@ int S(int v) { return MulDiv(v, static_cast<int>(g.dpi), 96); }
 std::wstring loadStr(int id) {
     wchar_t buf[256];
     int n = LoadStringW(GetModuleHandleW(nullptr), id, buf, 256);
-    return std::wstring(buf, static_cast<size_t>(n));
+    return {buf, static_cast<size_t>(n)};
 }
 
 std::wstring utf8ToWide(const std::string& s) {
@@ -82,11 +38,10 @@ std::wstring utf8ToWide(const std::string& s) {
 }
 
 std::wstring windowText(HWND h) {
-    int len = GetWindowTextLengthW(h);
+    const int len = GetWindowTextLengthW(h);
     std::wstring w(static_cast<size_t>(len) + 1, L'\0');
     GetWindowTextW(h, w.data(), len + 1);
-    w.resize(len);
-    return w;
+    return {w.data(), static_cast<size_t>(len)};
 }
 
 HWND createCtl(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y,
@@ -99,12 +54,16 @@ HWND createCtl(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int 
 
 void setStatus(UiState st, const std::wstring& text) {
     g.state = st;
-    SetWindowTextW(g.stStatus, text.c_str());
+    if (g.lastStatus != text) {
+        g.lastStatus = text;
+        SetWindowTextW(g.stStatus, text.c_str());
+    }
     InvalidateRect(g.stDot, nullptr, TRUE);
+    updateStateIcons();  // title bar / taskbar icon follows the state color
 }
 
 // One vocabulary for the status text, status dot and title-bar prefix.
-std::wstring stateLabel(UiState st) {
+static std::wstring stateLabel(UiState st) {
     switch (st) {
         case UiState::Ready: return loadStr(IDS_STATE_READY);
         case UiState::Preparing: return loadStr(IDS_STATE_PREPARING);
@@ -116,6 +75,14 @@ std::wstring stateLabel(UiState st) {
 }
 
 void setStatus(UiState st) { setStatus(st, stateLabel(st)); }
+
+// Cheap text setter: skips the WM_SETTEXT round-trip when unchanged
+// (onPoll runs every 200 ms; labels usually keep the same text).
+static void setTextIfChanged(HWND ctl, std::wstring& last, const wchar_t* text) {
+    if (last == text) return;
+    last = text;
+    SetWindowTextW(ctl, text);
+}
 
 void setUiRecording() {
     for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.editPath, g.btnBrowse,
@@ -134,7 +101,7 @@ void setUiIdle() {
     EnableWindow(g.btnPause, FALSE);
     SetWindowTextW(g.btnStart, loadStr(IDS_BTN_START).c_str());
     SetWindowTextW(g.btnPause, loadStr(IDS_BTN_PAUSE).c_str());
-    SetWindowTextW(g.wnd, loadStr(IDS_APP_TITLE).c_str());
+    setTextIfChanged(g.wnd, g.lastTitle, loadStr(IDS_APP_TITLE).c_str());
 }
 
 std::wstring formatDuration(double secs) {
@@ -158,20 +125,22 @@ void updateTitle() {
                  formatDuration(static_cast<double>(g.sess->statActiveNs.load()) / 1e9)
                      .c_str(),
                  fps);
-        SetWindowTextW(g.wnd, buf);
+        setTextIfChanged(g.wnd, g.lastTitle, buf);
     } else if (g.state == UiState::Preparing || g.state == UiState::Saving) {
         // Valid before the session exists (Preparing) and after stop (Saving).
         swprintf(buf, 160, loadStr(IDS_TITLE_STATE_FMT).c_str(),
                  stateLabel(g.state).c_str(), app.c_str());
-        SetWindowTextW(g.wnd, buf);
+        setTextIfChanged(g.wnd, g.lastTitle, buf);
     } else {
-        SetWindowTextW(g.wnd, app.c_str());
+        setTextIfChanged(g.wnd, g.lastTitle, app.c_str());
     }
 }
 
 // Fixed-layout info bar: status | duration | fps | size, one control each.
 // Ready/Preparing show nothing; Paused/Saving/finished show 平均 (average) fps.
 void clearStatsLabels() {
+    for (auto* last : {&g.lastStatus, &g.lastTime, &g.lastFps, &g.lastSize})
+        last->clear();
     SetWindowTextW(g.stStatus, L"");
     SetWindowTextW(g.stTime, L"");
     SetWindowTextW(g.stFps, L"");
@@ -183,12 +152,13 @@ void updateStatsLabels(double recentFps, double avgFps, std::uint64_t bytes,
     wchar_t buf[64];
     swprintf(buf, 64, loadStr(IDS_STATS_TIME_FMT).c_str(),
              formatDuration(secs).c_str());
-    SetWindowTextW(g.stTime, buf);
+    setTextIfChanged(g.stTime, g.lastTime, buf);
     swprintf(buf, 64, loadStr(showAvg ? IDS_STATS_AVG_FMT : IDS_STATS_FPS_FMT).c_str(),
              showAvg ? avgFps : recentFps);
-    SetWindowTextW(g.stFps, buf);
-    swprintf(buf, 64, loadStr(IDS_STATS_SIZE_FMT).c_str(), bytes / (1024.0 * 1024.0));
-    SetWindowTextW(g.stSize, buf);
+    setTextIfChanged(g.stFps, g.lastFps, buf);
+    swprintf(buf, 64, loadStr(IDS_STATS_SIZE_FMT).c_str(),
+             static_cast<double>(bytes) / (1024.0 * 1024.0));
+    setTextIfChanged(g.stSize, g.lastSize, buf);
 }
 
 void showError(const std::string& e) {
@@ -196,38 +166,11 @@ void showError(const std::string& e) {
                 MB_ICONERROR | MB_OK);
 }
 
-// Antialiased dot: per-pixel analytic circle coverage (4x4 supersampling),
-// blended over the window background. GDI's Ellipse is aliased and, at
-// ~8px under 125% DPI, visibly lumpy - this renders a true smooth circle.
-void drawDotAntialiased(HDC dc, const RECT& rc, COLORREF c) {
-    const int w = rc.right - rc.left;
-    const int h = rc.bottom - rc.top;
-    const double cx = w / 2.0, cy = h / 2.0;
-    const double r = (std::min)(w, h) / 2.0 - 0.25;
-    const COLORREF bg = GetSysColor(COLOR_WINDOW);
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            int inside = 0;
-            for (int sy = 0; sy < 4; ++sy) {
-                for (int sx = 0; sx < 4; ++sx) {
-                    const double dx = x + (sx + 0.5) / 4.0 - cx;
-                    const double dy = y + (sy + 0.5) / 4.0 - cy;
-                    if (dx * dx + dy * dy <= r * r) ++inside;
-                }
-            }
-            const double a = inside / 16.0;
-            const COLORREF px = RGB(
-                static_cast<int>(GetRValue(c) * a + GetRValue(bg) * (1 - a)),
-                static_cast<int>(GetGValue(c) * a + GetGValue(bg) * (1 - a)),
-                static_cast<int>(GetBValue(c) * a + GetBValue(bg) * (1 - a)));
-            SetPixel(dc, rc.left + x, rc.top + y, px);
-        }
-    }
-}
-
 // --- red border frame around the recorded region ---------------------------
 // Topmost, click-through, and excluded from screen capture
 // (WDA_EXCLUDEFROMCAPTURE) so it never appears in the video itself.
+
+namespace {
 
 LRESULT CALLBACK borderProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
@@ -240,8 +183,7 @@ LRESULT CALLBACK borderProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             GetClientRect(h, &rc);
             const int bw = S(5);
             const bool paused = g.sess && g.sess->isPaused();
-            const HBRUSH br =
-                CreateSolidBrush(paused ? RGB(230, 170, 0) : RGB(220, 30, 30));
+            HBRUSH br = CreateSolidBrush(paused ? RGB(230, 170, 0) : RGB(220, 30, 30));
             RECT edges[4] = {
                 {0, 0, rc.right, bw},
                 {0, rc.bottom - bw, rc.right, rc.bottom},
@@ -333,33 +275,6 @@ void handleFinished() {
     if (g.quitting) DestroyWindow(g.wnd);
 }
 
-RecorderSettings settingsFromUi() {
-    RecorderSettings s;
-    const int monSel = ComboBox_GetCurSel(g.comboMonitor);
-    s.allMonitors = (monSel <= 0);
-    s.monitorIndex = monSel > 0 ? monSel - 1 : 0;
-    wchar_t buf[32];
-    ComboBox_GetLBText(g.comboFps, ComboBox_GetCurSel(g.comboFps), buf);
-    s.fps = _wtoi(buf);
-    if (s.fps < 1 || s.fps > 60) s.fps = 30;
-    s.bitrateBps = static_cast<std::uint64_t>(
-        ComboBox_GetItemData(g.comboBitrate, ComboBox_GetCurSel(g.comboBitrate)));
-    s.outputPath = windowText(g.editPath);
-    if (s.outputPath.empty()) s.outputPath = defaultRecordingTemplate();
-    // Resolve Recording-YYYYMMDD-HHMMSS.mp4 to the actual save moment.
-    s.outputPath = expandRecordingPath(s.outputPath);
-    if (s.outputPath.find_last_of(L".") == std::wstring::npos ||
-        s.outputPath.find_last_of(L".") < s.outputPath.find_last_of(L"\\")) {
-        s.outputPath += L".mp4";  // no extension: add one
-    }
-    s.drawCursor = (Button_GetCheck(g.chkCursor) == BST_CHECKED);
-    s.preferGdi = (Button_GetCheck(g.chkGdi) == BST_CHECKED);
-    return s;
-}
-
-void saveUiSettings();  // defined below onBrowse
-void loadUiSettings();
-
 void onStart() {
     if (g.sess || g.state != UiState::Ready) return;  // already recording/preparing
     RecorderSettings s = settingsFromUi();
@@ -406,6 +321,7 @@ void onPoll() {
         return;
     }
     if (g.state == UiState::Saving) return;  // stop requested; keep 保存中 shown
+    onBlinkTick();  // blink the taskbar dot while recording
     updateBorderWindow();
     const double secs = static_cast<double>(g.sess->statActiveNs.load()) / 1e9;
     updateStatsLabels(g.sess->statFps.load(), g.sess->statAvgFps.load(),
@@ -435,75 +351,6 @@ void onBrowse() {
     }
 }
 
-// --- persisted settings (%APPDATA%\Recording\settings.ini) -----------------
-
-std::wstring configIniPath() {
-    std::wstring ini = L"settings.ini";
-    wchar_t* base = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &base)) &&
-        base) {
-        std::wstring dir = std::wstring(base) + L"\\Recording";
-        CreateDirectoryW(dir.c_str(), nullptr);
-        ini = dir + L"\\settings.ini";
-        CoTaskMemFree(base);
-    }
-    return ini;
-}
-
-void saveUiSettings() {
-    const std::wstring ini = configIniPath();
-    const std::wstring path = windowText(g.editPath);
-    const std::wstring dir = std::filesystem::path(path).parent_path().wstring();
-    if (!dir.empty())
-        WritePrivateProfileStringW(L"Settings", L"OutputDir", dir.c_str(), ini.c_str());
-    wchar_t buf[16];
-    swprintf(buf, 16, L"%d", ComboBox_GetCurSel(g.comboMonitor));
-    WritePrivateProfileStringW(L"Settings", L"MonitorSel", buf, ini.c_str());
-    swprintf(buf, 16, L"%d", GetWindowTextLengthW(g.comboFps) >= 0
-                                    ? ComboBox_GetCurSel(g.comboFps)
-                                    : 0);
-    WritePrivateProfileStringW(L"Settings", L"FpsSel", buf, ini.c_str());
-    swprintf(buf, 16, L"%d", ComboBox_GetCurSel(g.comboBitrate));
-    WritePrivateProfileStringW(L"Settings", L"BitrateSel", buf, ini.c_str());
-    swprintf(buf, 16, L"%d",
-             Button_GetCheck(g.chkCursor) == BST_CHECKED ? 1 : 0);
-    WritePrivateProfileStringW(L"Settings", L"DrawCursor", buf, ini.c_str());
-    swprintf(buf, 16, L"%d", Button_GetCheck(g.chkGdi) == BST_CHECKED ? 1 : 0);
-    WritePrivateProfileStringW(L"Settings", L"PreferGdi", buf, ini.c_str());
-}
-
-void loadUiSettings() {
-    const std::wstring ini = configIniPath();
-    g.loading = true;  // programmatic changes must not re-save/clobber
-    wchar_t dir[MAX_PATH] = L"";
-    GetPrivateProfileStringW(L"Settings", L"OutputDir", L"", dir, MAX_PATH,
-                             ini.c_str());
-    if (dir[0] && std::filesystem::is_directory(dir)) {
-        // Remembered folder + fresh Recording-YYYYMMDD-HHMMSS.mp4 template.
-        std::filesystem::path p = defaultRecordingTemplate();
-        std::wstring path = std::wstring(dir) + L"\\" + p.filename().wstring();
-        SetWindowTextW(g.editPath, path.c_str());
-    }
-    const int monSel = GetPrivateProfileIntW(L"Settings", L"MonitorSel", -1, ini.c_str());
-    if (monSel >= 0 && monSel < ComboBox_GetCount(g.comboMonitor))
-        ComboBox_SetCurSel(g.comboMonitor, monSel);
-    const int fpsSel = GetPrivateProfileIntW(L"Settings", L"FpsSel", -1, ini.c_str());
-    if (fpsSel >= 0 && fpsSel < ComboBox_GetCount(g.comboFps))
-        ComboBox_SetCurSel(g.comboFps, fpsSel);
-    const int brSel = GetPrivateProfileIntW(L"Settings", L"BitrateSel", -1, ini.c_str());
-    if (brSel >= 0 && brSel < ComboBox_GetCount(g.comboBitrate))
-        ComboBox_SetCurSel(g.comboBitrate, brSel);
-    Button_SetCheck(g.chkCursor,
-                    GetPrivateProfileIntW(L"Settings", L"DrawCursor", 1, ini.c_str())
-                            ? BST_CHECKED
-                            : BST_UNCHECKED);
-    Button_SetCheck(g.chkGdi,
-                    GetPrivateProfileIntW(L"Settings", L"PreferGdi", 0, ini.c_str())
-                            ? BST_CHECKED
-                            : BST_UNCHECKED);
-    g.loading = false;
-}
-
 void fillCombos() {
     g.monitors = listMonitors();
     ComboBox_AddString(g.comboMonitor, loadStr(IDS_MONITOR_ALL).c_str());
@@ -514,26 +361,29 @@ void fillCombos() {
                  m.height, m.primary ? primary.c_str() : L"");
         ComboBox_AddString(g.comboMonitor, buf);
     }
-    ComboBox_SetCurSel(g.comboMonitor, g.monitors.empty() ? 0 : 1);
+    ComboBox_SetCurSel(g.comboMonitor,
+                       g.monitors.empty() ? kMonitorSelAllMonitors
+                                          : kMonitorSelFirstMonitor);
 
-    for (int f : {10, 15, 24, 30, 60}) {
+    for (int i = 0; i < kFpsChoiceCount; ++i) {
         wchar_t buf[16];
-        swprintf(buf, 16, L"%d", f);
+        swprintf(buf, 16, L"%d", kFpsChoices[i]);
         ComboBox_AddString(g.comboFps, buf);
-        if (f == 30) ComboBox_SetCurSel(g.comboFps, ComboBox_GetCount(g.comboFps) - 1);
     }
+    ComboBox_SetCurSel(g.comboFps, kFpsDefaultSel);
 
-    struct BitrateItem { std::wstring label; std::uint64_t bps; };
     const std::wstring autoLabel = loadStr(IDS_BITRATE_AUTO);
-    const BitrateItem items[] = {
-        {autoLabel, 0},          {L"4 Mbps", 4'000'000},  {L"8 Mbps", 8'000'000},
-        {L"12 Mbps", 12'000'000}, {L"20 Mbps", 20'000'000}, {L"40 Mbps", 40'000'000},
-    };
-    for (const auto& it : items) {
-        int i = ComboBox_AddString(g.comboBitrate, it.label.c_str());
-        ComboBox_SetItemData(g.comboBitrate, i, static_cast<LPARAM>(it.bps));
+    for (int i = 0; i < kBitrateChoiceCount; ++i) {
+        wchar_t buf[24];
+        if (kBitrateMbps[i] == 0) {
+            swprintf(buf, 24, L"%ls", autoLabel.c_str());
+        } else {
+            swprintf(buf, 24, L"%d Mbps", kBitrateMbps[i]);
+        }
+        const int idx = ComboBox_AddString(g.comboBitrate, buf);
+        ComboBox_SetItemData(g.comboBitrate, idx, kBitrateMbps[i] * 1'000'000LL);
     }
-    ComboBox_SetCurSel(g.comboBitrate, 0);
+    ComboBox_SetCurSel(g.comboBitrate, kBitrateAutoSel);
 }
 
 void createControls() {
@@ -568,8 +418,6 @@ void createControls() {
     createCtl(L"STATIC", nullptr, SS_ETCHEDHORZ, 16, 152, 470, 2, 0);
 
     // Info bar: status | duration | fps | size - four equal columns.
-    // Dot: owner-drawn 8px circle. Center (32,176) = horizontal middle of the
-    // two-character label above, vertical middle of the status text to the right.
     g.stDot = createCtl(L"STATIC", nullptr, SS_OWNERDRAW, 28, 172, 8, 8, 0);
     g.stStatus = createCtl(L"STATIC", L"", SS_CENTERIMAGE | SS_ENDELLIPSIS, 54, 164,
                            108, 24, 0);
@@ -577,7 +425,7 @@ void createControls() {
     g.stFps = createCtl(L"STATIC", L"", SS_CENTERIMAGE, 270, 164, 108, 24, 0);
     g.stSize = createCtl(L"STATIC", L"", SS_CENTERIMAGE, 378, 164, 108, 24, 0);
 
-    // One dual-purpose default button (Enter): 开始/停止/取消, plus 暂停.
+    // One dual-purpose default button (Enter): 开始/停止, plus 暂停.
     g.btnStart = createCtl(L"BUTTON", loadStr(IDS_BTN_START).c_str(),
                            BS_DEFPUSHBUTTON | WS_TABSTOP, 16, 196, 90, 32, IDC_START);
     g.btnPause = createCtl(L"BUTTON", loadStr(IDS_BTN_PAUSE).c_str(), WS_TABSTOP, 116,
@@ -592,7 +440,9 @@ void createControls() {
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g.font), TRUE);
 }
 
-LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+}  // namespace
+
+static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:
             g.wnd = h;
@@ -640,18 +490,11 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DRAWITEM: {
             const DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
             if (!dis || dis->hwndItem != g.stDot) break;
-            COLORREF c = RGB(150, 150, 150);  // Preparing / Saving: gray
-            switch (g.state) {
-                case UiState::Ready: c = RGB(46, 160, 67); break;     // green
-                case UiState::Recording: c = RGB(200, 30, 30); break; // red
-                case UiState::Paused: c = RGB(210, 150, 0); break;    // yellow
-                default: break;
-            }
-            drawDotAntialiased(dis->hDC, dis->rcItem, c);
+            drawDotAntialiased(dis->hDC, dis->rcItem, stateColor(g.state));
             return TRUE;
         }
         case WM_CTLCOLORSTATIC: {
-            const HDC dc = reinterpret_cast<HDC>(wp);
+            const auto dc = reinterpret_cast<HDC>(wp);
             SetBkMode(dc, TRANSPARENT);
             return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
@@ -672,14 +515,14 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DESTROY:
             destroyBorderWindow();
             g.sess.reset();
+            destroyStateIcons();
             PostQuitMessage(0);
             return 0;
         default:
             return DefWindowProcW(h, msg, wp, lp);
     }
+    return DefWindowProcW(h, msg, wp, lp);  // paths that break out of the switch
 }
-
-}  // namespace
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -693,12 +536,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                          OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                          DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
+    // Pre-generate all state icons; the class icon starts as the Ready (green)
+    // one so the window never shows a default or off-state icon.
+    ensureStateIcons();
+
     WNDCLASSW wc{};
     wc.lpfnWndProc = wndProc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
-    if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wc.hIcon = g.stateIcons[stateIconBucket(UiState::Ready)][0];
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     wc.lpszClassName = L"RecordingGui";
     RegisterClassW(&wc);
@@ -723,20 +569,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                sx, sy, ww, wh, nullptr, nullptr, inst, nullptr);
     ShowWindow(wnd, show);
     UpdateWindow(wnd);
-
-    // Title-bar small icon (16/20px), independent of the class' big icon.
-    const HICON small = static_cast<HICON>(LoadImageW(
-        inst, MAKEINTRESOURCEW(1), IMAGE_ICON,
-        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
-    if (small) {
-        SendMessageW(wnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small));
-    }
-    const HICON big = static_cast<HICON>(LoadImageW(
-        inst, MAKEINTRESOURCEW(1), IMAGE_ICON,
-        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR));
-    if (big) {
-        SendMessageW(wnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
-    }
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

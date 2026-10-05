@@ -5,8 +5,6 @@
 #include <shlobj.h>
 
 #include <chrono>
-#include <cstdio>
-#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <memory>
@@ -20,7 +18,7 @@ namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 
 std::uint64_t autoBitrate(int width, int height, int fps) {
-    std::uint64_t b = static_cast<std::uint64_t>(
+    auto b = static_cast<std::uint64_t>(
         static_cast<double>(width) * height * fps * 0.12);
     if (b < 2'000'000) b = 2'000'000;
     if (b > 40'000'000) b = 40'000'000;
@@ -286,13 +284,14 @@ void RecorderSession::runLoop(IScreenCapture& cap, VideoEncoder& encoder) {
                                 : statFps.load();
             // Average from the same snapshot (frames and time are consistent).
             const double totalSecs = static_cast<double>(total) / 1e9;
-            statAvgFps = totalSecs > 0.5 ? frames / totalSecs : 0.0;
+            statAvgFps =
+                totalSecs > 0.5 ? static_cast<double>(frames) / totalSecs : 0.0;
             lastFrames = frames;
             // Real-time size: encoder byte count; fall back to flushed file size.
             const auto live = encoder.bytesWritten();
             std::error_code ec;
             const auto onDisk = fs::file_size(settings_.outputPath, ec);
-            const std::uint64_t flushed =
+            const auto flushed =
                 ec ? 0 : static_cast<std::uint64_t>(onDisk);
             statBytes = live > flushed ? live : flushed;
             lastStat = Clock::now();
@@ -302,6 +301,6 @@ void RecorderSession::runLoop(IScreenCapture& cap, VideoEncoder& encoder) {
     const std::int64_t total = totalActiveNs();
     statActiveNs = total;
     const double secs = static_cast<double>(total) / 1e9;
-    statFps = secs > 0.5 ? frames / secs : 0.0;
+    statFps = secs > 0.5 ? static_cast<double>(frames) / secs : 0.0;
     statAvgFps = statFps.load();
 }

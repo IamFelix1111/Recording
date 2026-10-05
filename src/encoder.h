@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,10 +21,10 @@ public:
 
     bool finish(std::string& err);
 
-    std::uint64_t frameCount() const;
+    [[nodiscard]] std::uint64_t frameCount() const;
 
     // Bytes handed to the sink writer so far (more real-time than file size).
-    std::uint64_t bytesWritten() const;
+    [[nodiscard]] std::uint64_t bytesWritten() const;
 
 private:
     struct Impl;

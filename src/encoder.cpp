@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include <mfapi.h>
-#include <mferror.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 
@@ -175,8 +174,8 @@ std::uint64_t VideoEncoder::bytesWritten() const {
 #endif
     if (FAILED(impl_->writer->GetStatistics(impl_->streamIndex, &st))) return 0;
 #if defined(__MINGW32__)
-    return static_cast<std::uint64_t>(st.qwByteCountProcessed);
+    return st.qwByteCountProcessed;
 #else
-    return static_cast<std::uint64_t>(st.qwByteCount);
+    return st.qwByteCount;
 #endif
 }

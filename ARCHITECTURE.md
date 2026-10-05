@@ -19,7 +19,10 @@ cmake-build-debug/
 | `src/capture.h/.cpp` | 屏幕采集 | `IScreenCapture`（接口：captureFrame/screenRect）、`DxgiCapture`（DXGI Desktop Duplication）、`GdiCapture`（BitBlt 回退/多屏）、`listMonitors()`、`overlayCursor()`（BGRA 上逐像素 alpha 混合鼠标） |
 | `src/encoder.h/.cpp` | 视频编码 | `VideoEncoder`：MF Sink Writer，输入 RGB32 → H.264/MP4；`bytesWritten()` 实时字节数（`GetStatistics`） |
 | `src/recorder.h/.cpp` | 会话编排 | `RecorderSession`：start/请求暂停/请求停止，工作线程跑 `runLoop`（帧率节奏 + 钳制帧时长），原子统计量（statFrames/statActiveNs/statBytes/statFps/statAvgFps）；`autoBitrate()`、`defaultRecordingTemplate()`/`expandRecordingPath()`（YYYYMMDD-HHMMSS 模板展开） |
-| `src/gui.cpp` | GUI 前端 | 控件布局、`UiState` 状态机、红色录制边框（`borderProc`）、设置持久化（`saveUiSettings`/`loadUiSettings`） |
+| `src/gui.cpp` | GUI 主文件 | 窗口生命周期、控件布局（`createControls`/`fillCombos`）、录制流程（onStart/doStop/onPoll）、红色录制边框（`borderProc`）、wWinMain |
+| `src/icons.cpp` | 状态图标 | `stateColor`（状态色唯一来源）、`makeStateIcon`（SDF+3x3 超采样程序化图标）、5 桶预生成缓存（含 `kIconBucketRedDim` 闪烁暗红）、`updateStateIcons`/`onBlinkTick`（录制中任务栏红/暗红 ≈1.2s 相位交替）、`drawDotAntialiased` |
+| `src/settings.cpp` | 设置持久化 | `settingsFromUi`（UI→RecorderSettings）、`saveUiSettings`/`loadUiSettings`（%APPDATA%\Recording\settings.ini） |
+| `src/gui_internal.h` | GUI 内部共享头 | App 结构（含图标缓存/脏检查缓存）、`UiState`、`kIconBucket*`、跨文件函数声明、**组合框索引常量**（kMonitorSel*/kFps*/kBitrate*，索引含义唯一定义处） |
 | `src/resource.h` + `src/gui.rc` | 字符串表 | 全部 UI 文案（`IDS_*`），翻译只需改 gui.rc 的 STRINGTABLE |
 | `src/gui.manifest` | 清单 | 公共控件 v6 视觉样式 |
 
@@ -52,6 +55,14 @@ Recording/Paused --停止/关窗--> Saving(灰/保存中) --worker 结束--> Rea
 - **UI 线程**：消息循环 + 200ms TIMER_POLL；`RecorderSession::start()` 阻塞式初始化（约 100–500ms，之前先画"准备中"）
 - **工作线程**（RecorderSession::worker）：COM(MTA) + 采集 + 编码 + 统计；结束发 `WM_APP_FINISHED`（`onFinished` 回调 PostMessage）
 - 停止：`requestStop()` 置原子标志 → runLoop 退出 → encoder.finish → `running_=false`
+
+## 渲染性能
+
+- 状态图标：启动时 5 色 × 大小一次性预生成（`ensureStateIcons`），切换仅 `WM_SETICON` 换句柄，零重生成
+- 录制闪烁：`onBlinkTick` 在 200ms 轮询里按 `GetTickCount64()/1200` 相位切任务栏大图标（红↔暗红），
+  仅相位变化时发送消息；标题栏小图标不闪。任务栏对快速换图标会合并重绘，故用慢速相位
+- 状态圆点/边框：事件驱动重绘（仅状态变化），无持续开销
+- 标签脏检查：`setTextIfChanged`——onPoll 每 200ms 更新标题与信息列，文本未变时跳过 `WM_SETTEXT`
 
 ## 持久化
 
