@@ -1,9 +1,9 @@
-# Recording — Windows 屏幕录制程序 (C++)
+# Recording — Windows 屏幕录制程序
+
+<img src="icon.svg" width="128" height="128" style="float: right" alt="Recording icon"/>
 
 零外部依赖的 Windows 屏幕录制工具，仅使用系统原生 API（DXGI / GDI / Media Foundation / Win32），
-原生 Win32 图形界面 + 系统托盘。
-
-![icon](icon.png)
+原生 Win32 图形界面 + 系统托盘。构建产物为**单文件 exe**（运行库全部静态链接，无需任何 DLL）。
 
 ## 特性
 
@@ -37,23 +37,25 @@ cmake -S . -B build
 cmake --build build
 ```
 
-MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系统，无控制台窗口）。
+MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系统，无控制台窗口，
+**单文件即可运行**——线程/互斥用 Win32 原生实现，pthread 符号由 `src/pthreadshim.cpp` 垫片满足，
+不依赖 `libwinpthread-1.dll`）。
 
 推送 `v*` 标签时 GitHub Actions 自动构建 Release（MinGW-w64 + `-O3` + 符号剥离），
-打包 `Recording-<tag>-win64.zip`（exe + `libwinpthread-1.dll` + README + LICENSE）并发布 Release。
+打包 `Recording-<tag>-win64.zip`（单文件 exe + 精简版 README + LICENSE）并发布 Release；
+含连字符的标签（`-test`/`-rc1`/`-beta`）发布为预发布版。
 
 ## 许可证
 
 [GNU General Public License v3.0](LICENSE)
 
-## 用法（RecordingGui.exe）
+## 用法
 
 - 顶部设置区：显示器 / 帧率（10–60）/ 码率（自动或 4–40 Mbps）/ 输出路径（浏览选择）/ 鼠标开关 / GDI 兼容后端
 - **开始**（默认按钮，Enter 触发）→ 状态点变红、采集区域出现红色边框；**暂停 / 继续**（边框变黄）；
   同一按钮变**停止**，收尾后显示「保存成功」
 - 录制中可最小化/关闭主窗口（隐藏到托盘），通过托盘控制录制
-- 默认输出模板 `CAPTURES\Capture-YYYYMMDD-HHMMSS.mp4`（捕获文件夹，实测
-  `OneDrive\Videos\Captures\`），点击开始时展开为实际日期时间；
+- 默认输出模板 `CAPTURES\Capture-YYYYMMDD-HHMMSS.mp4`（捕获文件夹），点击开始时展开为实际日期时间；
   亦可自定义如 `VIDEOS\Rec-YY-MM-DD_HH-MM-SS.mp4`
 - 设置保存在 `%APPDATA%\Recording\settings.ini`
 
@@ -67,6 +69,7 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 | `src/gui.cpp`                   | GUI 主文件：窗口生命周期、控件布局、录制流程、红色录制边框          |
 | `src/icons.cpp`                 | 状态图标/角标（预生成缓存、录制闪烁）、任务栏角标、抗锯齿状态圆点   |
 | `src/tray.cpp`                  | 系统托盘：单击/双击/中键/右键菜单交互，命令经 `WM_COMMAND` 路由     |
+| `src/pthreadshim.cpp`           | pthread 符号垫片（SRWLOCK/FLS 实现），使 exe 不依赖 winpthread DLL  |
 | `src/settings.cpp`              | 设置持久化与 UI → 录制参数映射                                      |
 | `src/gui_internal.h`            | GUI 内部共享头：`App`/`UiState`、共享声明、组合框索引常量           |
 | `src/resource.h` / `src/gui.rc` | 字符串表（全部 UI 文案，**翻译只需改 gui.rc**）与公共控件 v6 清单   |

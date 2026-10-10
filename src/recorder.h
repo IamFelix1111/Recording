@@ -1,12 +1,11 @@
 #pragma once
 
+#include <windows.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <future>
-#include <mutex>
 #include <string>
-#include <thread>
 
 struct RecorderSettings {
     std::wstring outputPath;      // required; .mp4
@@ -20,7 +19,8 @@ struct RecorderSettings {
 
 // One recording run: owns the worker thread, capture backend and encoder.
 // Control methods are safe to call from any thread; stats are atomics that
-// can be polled while recording.
+// can be polled while recording. Uses Win32 threads/SRWLOCK only (no
+// libwinpthread dependency).
 class RecorderSession {
 public:
     RecorderSession() = default;
@@ -37,6 +37,8 @@ public:
 
     void requestPauseToggle();
     void requestStop();
+    // Live options while recording:
+    void setDrawCursor(bool on) { drawCursor_.store(on); }
 
     bool isRunning() const { return running_.load(); }
     bool isPaused() const { return paused_.load(); }
@@ -56,7 +58,12 @@ public:
     std::atomic<int> capX{0}, capY{0}, capW{0}, capH{0};
 
 private:
-    void worker(std::promise<std::string> initResult);
+    // Internal: runs on the worker thread (invoked by the trampoline in
+    // recorder.cpp). Public visibility is required by the free trampoline.
+public:
+    void worker();
+
+private:
     void runLoop(class IScreenCapture& cap, class VideoEncoder& encoder);
     void setLastError(const std::string& e);
 
@@ -65,13 +72,24 @@ private:
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> pauseRequested_{false};
     std::atomic<bool> paused_{false};
-    std::thread thread_;
-    mutable std::mutex errMutex_;
+    std::atomic<bool> drawCursor_{true};  // live cursor toggle (per frame)
+    HANDLE worker_ = nullptr;       // _beginthreadex handle
+    HANDLE initEvent_ = nullptr;    // signaled once init result is ready
+    std::string initErr_;           // written before initEvent_ is set
+    mutable SRWLOCK errLock_ = SRWLOCK_INIT;
     std::string lastError_;
 };
 
 // Bitrate suggestion: ~0.12 bits per pixel per frame (1080p30 ~ 7.5 Mbps).
 std::uint64_t autoBitrate(int width, int height, int fps);
+
+// Win32 path helpers (kept <filesystem>-free so libstdc++ locale/EH glue
+// that drags in winpthreads is not linked).
+bool dirExists(const std::wstring& path);
+std::uint64_t fileSizeOf(const std::wstring& path);  // 0 on failure
+bool ensureDirPath(const std::wstring& dir);         // recursive CreateDirectoryW
+std::wstring parentPathOf(const std::wstring& path);
+std::wstring fileNameOf(const std::wstring& path);
 
 // "<Videos>/Recording-YYYYMMDD-HHMMSS.mp4" with literal date/time tokens.
 std::wstring defaultRecordingTemplate();

@@ -35,6 +35,7 @@ constexpr DWORD kTransientStateMs = 10;
 constexpr int IDM_TRAY_SHOW = 2001;
 constexpr int IDM_TRAY_PAUSE = 2002;
 constexpr int IDM_TRAY_STOP = 2003;
+constexpr int IDM_TRAY_QUIT = 2004;
 
 // --- combo box index conventions (single source of truth) -------------------
 // Monitor combo: entry kMonitorSelAllMonitors = "all monitors" (virtual
@@ -75,6 +76,7 @@ struct App {
     HWND stTime = nullptr, stFps = nullptr, stSize = nullptr;
     HFONT font = nullptr;
     UINT dpi = 96;
+    bool quitting = false;      // quit requested (tray menu): destroy after save
     bool loading = false;  // suppress auto-save while restoring settings
     // Pre-generated state icons, one row per bucket (see kIconBucketCount).
     // [0]=big (taskbar/Alt-Tab), [1]=small (title bar).
@@ -136,6 +138,7 @@ void releaseTaskbarCom();
 // Visible while Preparing/Recording/Paused/Saving; hidden when Ready.
 void trayShow();
 void trayHide();
+[[nodiscard]] bool trayIsVisible();
 void traySetState(UiState st);
 // Applies the blink phase to the tray icon while recording.
 void traySetBlinkPhase(bool on);

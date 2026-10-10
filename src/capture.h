@@ -29,6 +29,8 @@ public:
     [[nodiscard]] virtual int height() const = 0;
     // Screen coordinates of the captured region (for UI overlays).
     virtual void screenRect(int& x, int& y, int& w, int& h) const = 0;
+    // Toggles cursor drawing live (read every frame; thread-safe).
+    virtual void setDrawCursor(bool on) = 0;
     // Blocks up to timeoutMs waiting for a frame. Returns nullptr only on error.
     virtual const VideoFrame* captureFrame(int timeoutMs, std::string& err) = 0;
 };

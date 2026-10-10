@@ -22,6 +22,13 @@
 * ##### Every Day Check Notes:
   * 2026-10-10: 本轮深审伴随托盘/瞬态实现：新增 `tray.cpp`（交互→`WM_COMMAND` 路由）、`onStart` 改后台线程初始化+消息泵（UI 不再冻结）、发现并修复 `ITaskbarList3` 静态引用未释放导致退出拖延 2–3.6s（`releaseTaskbarCom()`）
 
+* 录制时可以开放部分选项，如输出(如果可以直接改就直接改，不能直接改就最后再移动)和录制鼠标指针等
+  * Solution: 鼠标开关**实时生效**——`IScreenCapture::setDrawCursor`，后端 `drawCursor_` 改 `std::atomic<bool>`，`RecorderSession::setDrawCursor` → `runLoop` 每帧应用；输出路径**不可直接改**（MF Sink 绑定 URL）→ `handleFinished` 时若路径已改则 `MoveFileExW` 移动成品（含建目录、失败弹窗回退旧路径）；`setUiRecording` 开放 鼠标复选/路径框/浏览，显示器/帧率/码率/GDI 保持禁用。实测：录制中三者状态正确、切鼠标不崩溃、改路径后文件落到 `Moved-*.mp4` 且无原名残留。**准备期**：控件本就可用（快照前改动无效仅持久化），会话建立时同步鼠标开关；准备超 10ms 显示视觉时同样禁用固定选项（与录制一致）
+* 托盘右键菜单加一项退出
+  * Solution: `IDS_TRAY_QUIT` + `IDM_TRAY_QUIT`（分隔线下，托盘可见期间可用）：确认框统一为「正在录制，停止并退出？」（`IDS_CONFIRM_QUIT`，Ready 无托盘故无需另一文案），「确定」后 `g.quitting` → 停止保存 → `handleFinished` 销毁窗口；**准备期间**点退出时 `g.sess` 未建立——`onStart` 完成后立即 `requestStop()`，初始化失败路径亦按 quitting 销毁。实测：录制中确定 319ms 完成保存→退出，文件完整；Ready 关窗=直接退出（122ms，无托盘无确认框）。**准备/保存期间**：托盘菜单除「退出」全部置灰（`interactions` 仅 Recording/Paused 为真），左键/双击/中键消息直接忽略（实测准备期发送后状态不变，录制期单机暂停/恢复正常）
+* Win32 原生化：`std::thread`→`_beginthreadex`+Event、`std::mutex`→SRWLOCK、`sleep_*`→`Sleep`、`steady_clock`→QPC；移除 `<filesystem>`；函数内 static 移文件作用域；残留 pthread 符号以 `pthreadshim.cpp` 垫片——单文件 exe
+* 改用 Win32 原生线程/互斥，消除 `libwinpthread-1.dll` 依赖（单文件 exe）
+  * Solution: 逐项替换见上；实测导入表仅剩系统 DLL，独立目录单 exe 录制/暂停/停止/退出（114ms）全绿；CMake 移除 DLL 复制，CI 打包改为单 exe + `RELEASE.md`（精简 README）+ `LICENSE`
 * 任务栏角标加一个灰色细边框，避免和图标混淆
   * Solution: `makeDotIcon` 改双圆 4×4 超采样：内圆状态色（`r=size*0.30`）+ 外圈灰环（`RGB(160,160,160)`，厚 `max(1px, size*0.08)`），像素色 = 子样本按 点/环 占比混合、alpha = 总覆盖率；亮红与暗红两个相位角标均带环
 * 任务栏角标闪烁有渐显和渐隐，应改为没有(在闪烁时)

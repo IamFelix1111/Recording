@@ -7,10 +7,11 @@
 
 #include <wrl/client.h>
 
+#include <atomic>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -178,7 +179,7 @@ public:
     }
 
     bool init(int monitorIndex, bool allMonitors, bool drawCursor, std::string& err) {
-        drawCursor_ = drawCursor;
+        drawCursor_.store(drawCursor);
         if (allMonitors) {
             rect_.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
             rect_.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -240,6 +241,7 @@ public:
         w = width_;
         h = height_;
     }
+    void setDrawCursor(bool on) override { drawCursor_.store(on); }
 
     const VideoFrame* captureFrame(int /*timeoutMs*/, std::string& err) override {
         if (!BitBlt(memDc_, 0, 0, width_, height_, screenDc_, rect_.left, rect_.top,
@@ -247,7 +249,7 @@ public:
             err = "BitBlt failed";
             return nullptr;
         }
-        if (drawCursor_) {
+        if (drawCursor_.load()) {
             CURSORINFO ci{};
             ci.cbSize = sizeof(ci);
             if (GetCursorInfo(&ci) && (ci.flags & CURSOR_SHOWING)) {
@@ -277,7 +279,7 @@ private:
     BITMAPINFO bmi_{};
     RECT rect_{};
     int width_ = 0, height_ = 0;
-    bool drawCursor_ = true;
+    std::atomic<bool> drawCursor_{true};
     std::vector<std::uint8_t> pixels_;
     VideoFrame frame_;
 };
@@ -291,7 +293,7 @@ public:
     ~DxgiCapture() override = default;
 
     bool init(HMONITOR target, bool drawCursor, std::string& err) {
-        drawCursor_ = drawCursor;
+        drawCursor_.store(drawCursor);
 
         ComPtr<IDXGIFactory1> factory;
         HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
@@ -369,6 +371,7 @@ public:
         w = width_;
         h = height_;
     }
+    void setDrawCursor(bool on) override { drawCursor_.store(on); }
 
     const VideoFrame* captureFrame(int timeoutMs, std::string& err) override {
         if (frameHeld_ && dup_) {
@@ -420,7 +423,8 @@ public:
         dup_->ReleaseFrame();
         frameHeld_ = false;
 
-        if (drawCursor_) overlayCursor(pixels_.data(), width_, height_, originX_, originY_);
+        if (drawCursor_.load())
+            overlayCursor(pixels_.data(), width_, height_, originX_, originY_);
         frame_.changed = true;
         return &frame_;
     }
@@ -432,7 +436,7 @@ private:
             HRESULT hr = output1_->DuplicateOutput(device_.Get(), &dup_);
             if (SUCCEEDED(hr)) return true;
             if (attempt == 2) err = "DuplicateOutput failed: " + hrText(hr);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            Sleep(100);
         }
         return false;
     }
@@ -444,7 +448,7 @@ private:
     ComPtr<ID3D11Texture2D> staging_;
     int width_ = 0, height_ = 0;
     int originX_ = 0, originY_ = 0;
-    bool drawCursor_ = true;
+    std::atomic<bool> drawCursor_{true};
     bool frameHeld_ = false;
     std::vector<std::uint8_t> pixels_;
     VideoFrame frame_;

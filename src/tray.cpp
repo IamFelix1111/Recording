@@ -13,9 +13,11 @@
 
 namespace {
 
+// File-scope (not function-local) so no __cxa_guard is needed.
+NOTIFYICONDATAW g_nid{};
+
 NOTIFYICONDATAW& nid() {
-    static NOTIFYICONDATAW data{};
-    return data;
+    return g_nid;
 }
 
 // Timestamp of the last handled double-click: the shell sends a trailing
@@ -29,11 +31,21 @@ void postCommand(int id) {
 
 void showContextMenu() {
     const HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, loadStr(IDS_TRAY_SHOW).c_str());
+    // During Preparing/Saving only 退出 is available; pause/stop are
+    // meaningless (no session yet / already stopping) and the window is
+    // mid-transition, so even showing it is blocked.
+    const bool interactions =
+        g.state == UiState::Recording || g.state == UiState::Paused;
+    AppendMenuW(menu,
+                MF_STRING | (interactions ? 0 : MF_GRAYED), IDM_TRAY_SHOW,
+                loadStr(IDS_TRAY_SHOW).c_str());
     const bool paused = g.sess && g.sess->isPaused();
-    AppendMenuW(menu, MF_STRING, IDM_TRAY_PAUSE,
+    AppendMenuW(menu, MF_STRING | (interactions ? 0 : MF_GRAYED), IDM_TRAY_PAUSE,
                 loadStr(paused ? IDS_BTN_RESUME : IDS_BTN_PAUSE).c_str());
-    AppendMenuW(menu, MF_STRING, IDM_TRAY_STOP, loadStr(IDS_BTN_STOP).c_str());
+    AppendMenuW(menu, MF_STRING | (interactions ? 0 : MF_GRAYED), IDM_TRAY_STOP,
+                loadStr(IDS_BTN_STOP).c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, IDM_TRAY_QUIT, loadStr(IDS_TRAY_QUIT).c_str());
 
     POINT pt{};
     GetCursorPos(&pt);
@@ -69,6 +81,10 @@ void trayHide() {
     n = {};
 }
 
+bool trayIsVisible() {
+    return nid().hWnd != nullptr;
+}
+
 void traySetState(UiState st) {
     NOTIFYICONDATAW& n = nid();
     if (!n.hWnd) return;
@@ -98,6 +114,18 @@ void traySetBlinkPhase(bool on) {
 
 bool trayHandleMessage(WPARAM wp, LPARAM lp) {
     if (wp != 1) return false;  // our single tray id
+    switch (LOWORD(lp)) {
+        case WM_LBUTTONUP:
+        case WM_LBUTTONDBLCLK:
+        case WM_MBUTTONUP:
+            // Pause/show/stop only make sense while actually recording or
+            // paused; during Preparing/Saving they are disabled outright.
+            if (g.state == UiState::Preparing || g.state == UiState::Saving)
+                return true;
+            break;
+        default:
+            break;
+    }
     switch (LOWORD(lp)) {
         case WM_LBUTTONUP:
             // Trailing release right after a double-click: ignore, it must

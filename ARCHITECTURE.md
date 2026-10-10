@@ -24,6 +24,7 @@ cmake-build-debug/
 | `src/settings.cpp`              | 设置持久化     | `settingsFromUi`（UI→RecorderSettings）、`saveUiSettings`/`loadUiSettings`（%APPDATA%\Recording\settings.ini）                                                                                                                                                   |
 | `src/gui_internal.h`            | GUI 内部共享头 | App 结构（含图标缓存/脏检查缓存）、`UiState`、`kIconBucket*`、跨文件函数声明、**组合框索引常量**（kMonitorSel*/kFps*/kBitrate*，索引含义唯一定义处）                                                                                                             |
 | `src/tray.cpp`                  | 托盘图标       | `Shell_NotifyIconW` 生命周期（Preparing/Recording/Paused/Saving 可见）；左键单击暂停（双击防误触）、双击显示、中键停止、右键菜单，命令经 `IDM_TRAY_*` 走 `WM_COMMAND`                                                                                            |
+| `src/pthreadshim.cpp`           | pthread 垫片   | 以 SRWLOCK/Interlocked/FLS 实现 libstdc++ 引用的 8 个 pthread 符号（once/mutex×4/key×3），使 exe 不依赖 `libwinpthread-1.dll`（单文件）                                                                                              |
 | `src/resource.h` + `src/gui.rc` | 字符串表       | 全部 UI 文案（`IDS_*`），翻译只需改 gui.rc 的 STRINGTABLE                                                                                                                                                                                                        |
 | `src/gui.manifest`              | 清单           | 公共控件 v6 视觉样式                                                                                                                                                                                                                                             |
 
@@ -76,7 +77,8 @@ Recording/Paused --停止/关窗--> Saving(灰/保存中) --worker 结束--> Rea
 - 宽字符 `swprintf` 中 `%s`=窄串，宽串必须用 **`%ls`**（MSVC 恰相反）
 - `mfreadwrite.h` 需先 include `mfidl.h`（IMFMediaSink）；`MF_SINK_WRITER_STATISTICS` 字段名为 `cb`/`qwByteCountProcessed`（MSVC 是 `cbSize`/`qwByteCount`），encoder.cpp 有 `__MINGW32__` 条件编译
 - `AddStream()` 设置输出格式（无 `SetOutputMediaType`）；无 `MFCreate2DMemoryBuffer`（用平面 buffer + memcpy）
-- 静态链接：`-static-libgcc -static-libstdc++`；`libwinpthread-1.dll` 由 CMake POST_BUILD 复制到输出目录
+- 静态链接：`-static-libgcc -static-libstdc++`；线程/互斥为 Win32 原生（`_beginthreadex`/`SRWLOCK`/Event），
+  libstdc++ 残留的 pthread 引用由 `src/pthreadshim.cpp` 垫片满足 → **单文件 exe，无 `libwinpthread-1.dll`**
 - gui.rc：UTF-8 编码 + `#pragma code_page(65001)`；GUI 目标需 `-municode`
 
 ## 已知边界

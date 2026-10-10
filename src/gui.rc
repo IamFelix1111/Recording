@@ -44,7 +44,9 @@ BEGIN
     IDS_STATS_AVG_FMT    "平均 %.1f fps"
 
     IDS_ERR_TITLE        "错误"
+    IDS_CONFIRM_QUIT     "正在录制，停止并退出？"
 
     IDS_TRAY_SHOW        "显示界面"
+    IDS_TRAY_QUIT        "退出"
     IDS_TRAY_TIP_FMT     "屏幕录制 - %ls"
 END

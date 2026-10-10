@@ -36,8 +36,8 @@ jobs:
         run: |
           mkdir -p package
           cp build/RecordingGui.exe package/
-          cp build/libwinpthread-1.dll package/
-          cp README.md LICENSE package/
+          cp RELEASE.md package/README.md
+          cp LICENSE package/
           zip -r "Recording-${GITHUB_REF_NAME}-win64.zip" package
 
       - name: Upload artifact

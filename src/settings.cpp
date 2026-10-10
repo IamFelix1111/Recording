@@ -7,7 +7,6 @@
 #include <shlobj.h>
 
 #include <cstdio>
-#include <filesystem>
 
 #include "gui_internal.h"
 
@@ -51,7 +50,7 @@ std::wstring configIniPath() {
 void saveUiSettings() {
     const std::wstring ini = configIniPath();
     const std::wstring path = windowText(g.editPath);
-    const std::wstring dir = std::filesystem::path(path).parent_path().wstring();
+    const std::wstring dir = parentPathOf(path);
     if (!dir.empty())
         WritePrivateProfileStringW(L"Settings", L"OutputDir", dir.c_str(), ini.c_str());
     wchar_t buf[16];
@@ -74,10 +73,10 @@ void loadUiSettings() {
     wchar_t dir[MAX_PATH] = L"";
     GetPrivateProfileStringW(L"Settings", L"OutputDir", L"", dir, MAX_PATH,
                              ini.c_str());
-    if (dir[0] && std::filesystem::is_directory(dir)) {
+    if (dir[0] && dirExists(dir)) {
         // Remembered folder + fresh Recording-YYYYMMDD-HHMMSS.mp4 template.
-        std::filesystem::path p = defaultRecordingTemplate();
-        std::wstring path = std::wstring(dir) + L"\\" + p.filename().wstring();
+        std::wstring path = std::wstring(dir) + L"\\" +
+                            fileNameOf(defaultRecordingTemplate());
         SetWindowTextW(g.editPath, path.c_str());
     }
     const int monSel =

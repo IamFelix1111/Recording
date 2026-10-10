@@ -32,6 +32,7 @@ add_executable(RecordingGui WIN32
     src/icons.cpp
     src/settings.cpp
     src/tray.cpp
+    src/pthreadshim.cpp
     src/gui.rc
 )
 target_link_libraries(RecordingGui PRIVATE recorder_core comctl32 comdlg32)
@@ -41,13 +42,10 @@ if(NOT MSVC)
 endif()
 
 if(NOT MSVC)
-    # Static-link the C/C++ runtimes so the exe needs only libwinpthread-1.dll,
-    # which is copied next to the binary below.
+    # Static-link the C/C++ runtimes; pthread symbols needed by libstdc++
+    # are satisfied by src/pthreadshim.cpp (Win32), so the exe is fully
+    # self-contained - no libwinpthread-1.dll required.
     target_link_options(RecordingGui PRIVATE -static-libgcc -static-libstdc++)
-    get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    add_custom_command(TARGET RecordingGui POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_mingw_bin}/libwinpthread-1.dll" $<TARGET_FILE_DIR:RecordingGui>)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         # Strip symbols for a smaller release binary.
         target_link_options(RecordingGui PRIVATE -s)

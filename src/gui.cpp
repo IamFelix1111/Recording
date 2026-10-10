@@ -7,13 +7,12 @@
 #include <objbase.h>
 #include <commctrl.h>
 #include <commdlg.h>
+#include <process.h>
 
 #include <cstdio>
 #include <cwchar>
 #include <algorithm>
-#include <filesystem>
 #include <memory>
-#include <thread>
 
 #include "gui_internal.h"
 
@@ -87,9 +86,12 @@ static void setTextIfChanged(HWND ctl, std::wstring& last, const wchar_t* text) 
 }
 
 void setUiRecording() {
-    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.editPath, g.btnBrowse,
-                   g.chkCursor, g.chkGdi})
+    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.chkGdi})
         EnableWindow(h, FALSE);
+    // Live options stay enabled while recording: the cursor toggle applies
+    // per frame; an edited output path moves the finished file on stop.
+    for (HWND h : {g.editPath, g.btnBrowse, g.chkCursor})
+        EnableWindow(h, TRUE);
     EnableWindow(g.btnStart, TRUE);  // becomes 停止
     EnableWindow(g.btnPause, TRUE);
     SetWindowTextW(g.btnStart, loadStr(IDS_BTN_STOP).c_str());
@@ -259,15 +261,33 @@ void handleFinished() {
     const double secs = static_cast<double>(g.sess->statActiveNs.load()) / 1e9;
     // Prefer the real final file size (MiB, matching Explorer's display).
     std::uint64_t bytes = g.sess->statBytes.load();
-    {
-        std::error_code ec;
-        const auto sz = std::filesystem::file_size(path, ec);
-        if (!ec) bytes = static_cast<std::uint64_t>(sz);
-    }
+    if (const std::uint64_t onDisk = fileSizeOf(path)) bytes = onDisk;
     updateStatsLabels(g.sess->statFps.load(), g.sess->statAvgFps.load(), bytes, secs,
                       true);
+    const std::wstring oldPath = g.sess->settings().outputPath;
     g.sess.reset();  // joins the worker thread
     destroyBorderWindow();
+
+    // The output path may have been edited while recording: the encoder is
+    // bound to the original URL, so move the finished file to the new target.
+    std::wstring newPath = windowText(g.editPath);
+    if (!newPath.empty()) newPath = expandRecordingPath(newPath);
+    if (!newPath.empty() && _wcsicmp(newPath.c_str(), oldPath.c_str()) != 0) {
+        if (const std::wstring parent = parentPathOf(newPath); !parent.empty())
+            ensureDirPath(parent);
+        if (!MoveFileExW(oldPath.c_str(), newPath.c_str(),
+                         MOVEFILE_REPLACE_EXISTING)) {
+            wchar_t msg[MAX_PATH + 128];
+            swprintf(msg, MAX_PATH + 128, L"MoveFile failed (%lu)\n%ls ->\n%ls",
+                     GetLastError(), oldPath.c_str(), newPath.c_str());
+            MessageBoxW(g.wnd, msg, loadStr(IDS_ERR_TITLE).c_str(),
+                        MB_ICONWARNING | MB_OK);
+            newPath = oldPath;  // the file stayed where it was written
+        } else if (const std::uint64_t moved = fileSizeOf(newPath)) {
+            bytes = moved;
+        }
+    }
+
     setUiIdle();
 
     if (hadError)
@@ -276,6 +296,11 @@ void handleFinished() {
               hadError ? loadStr(IDS_STATUS_ERROR) : loadStr(IDS_STATUS_SAVED));
     trayHide();
 
+    if (g.quitting) {
+        g.quitting = false;
+        DestroyWindow(g.wnd);
+        return;
+    }
     // Recording stopped: bring the window back up front.
     ShowWindow(g.wnd, SW_SHOW);
     SetForegroundWindow(g.wnd);
@@ -300,10 +325,27 @@ void onStart() {
     bool quitPosted = false;
     const ULONGLONG t0 = GetTickCount64();
     HANDLE done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    std::thread starter([&] {
-        ok = sess->start(s, err);
-        SetEvent(done);
-    });
+    struct StarterCtx {
+        RecorderSession* sess;
+        RecorderSettings s;
+        bool ok;
+        std::string err;
+        HANDLE done;
+    };
+    auto ctx = std::make_unique<StarterCtx>();
+    ctx->sess = sess.get();
+    ctx->s = s;
+    ctx->done = done;
+    StarterCtx* rawCtx = ctx.get();
+    HANDLE starter = reinterpret_cast<HANDLE>(_beginthreadex(
+        nullptr, 0,
+        [](void* p) -> unsigned {
+            auto* c = static_cast<StarterCtx*>(p);
+            c->ok = c->sess->start(c->s, c->err);
+            SetEvent(c->done);
+            return 0;
+        },
+        rawCtx, 0, nullptr));
     for (;;) {
         const ULONGLONG now = GetTickCount64();
         const DWORD wait =
@@ -324,18 +366,23 @@ void onStart() {
         }
         if (!visualsShown && !quitPosted && GetTickCount64() - t0 >= kTransientStateMs) {
             visualsShown = true;
+            // Disable the session-fixed options (already snapshotted); the
+            // live ones (cursor/path) stay enabled, mirroring Recording.
+            for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.chkGdi})
+                EnableWindow(h, FALSE);
             EnableWindow(g.btnStart, FALSE);  // gray out while preparing
             EnableWindow(g.btnPause, FALSE);
             setStatus(UiState::Preparing);    // blue dot/icon + 准备中
             updateTitle();
-            trayShow();
             UpdateWindow(g.wnd);
         }
         if (quitPosted) break;
     }
-    WaitForSingleObject(done, INFINITE);
-    starter.join();
+    WaitForSingleObject(starter, INFINITE);
+    CloseHandle(starter);
     CloseHandle(done);
+    ok = rawCtx->ok;
+    err = rawCtx->err;
 
     if (quitPosted) {
         if (ok) {
@@ -352,10 +399,20 @@ void onStart() {
         setUiIdle();     // re-enables controls (safe even if never disabled)
         setStatus(UiState::Ready);
         showError(err);
+        if (g.quitting) {
+            g.quitting = false;
+            DestroyWindow(g.wnd);
+        }
         return;
     }
     g.sess = std::move(sess);
+    // Quit requested while preparing: stop right away; handleFinished
+    // destroys the window once saving completes.
+    if (g.quitting) g.sess->requestStop();
     setUiRecording();
+    // Options may have been toggled during Preparing (controls stay enabled):
+    // sync the live cursor switch; an edited path moves the file on stop.
+    g.sess->setDrawCursor(Button_GetCheck(g.chkCursor) == BST_CHECKED);
     setStatus(UiState::Recording);  // shows the tray as a side effect
     updateTitle();
     blinkRecordingStart();
@@ -539,6 +596,25 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 doStop();
                 return 0;
             }
+            if (id == IDM_TRAY_QUIT) {
+                // The tray only exists during activity states, so quitting
+                // always means "stop, save, then exit".
+                const int choice = MessageBoxW(
+                    h, loadStr(IDS_CONFIRM_QUIT).c_str(),
+                    loadStr(IDS_APP_TITLE).c_str(), MB_OKCANCEL | MB_ICONQUESTION);
+                if (choice != IDOK) return 0;
+                g.quitting = true;
+                if (g.sess && g.sess->isRunning()) {
+                    doStop();  // handleFinished destroys the window when done
+                } else if (g.state == UiState::Preparing) {
+                    // Session not established yet; onStart applies the stop
+                    // as soon as the (still running) init finishes.
+                } else {
+                    g.quitting = false;
+                    DestroyWindow(h);
+                }
+                return 0;
+            }
             if (code == BN_CLICKED) {
                 if (id == IDC_START) {
                     if (g.sess && g.state != UiState::Saving)
@@ -549,6 +625,10 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                     onBrowse();
                 } else if (id == IDC_PAUSE && g.sess) {
                     g.sess->requestPauseToggle();
+                } else if (id == IDC_CURSOR) {
+                    // Live option: applies from the next captured frame on.
+                    if (g.sess) g.sess->setDrawCursor(
+                        Button_GetCheck(g.chkCursor) == BST_CHECKED);
                 }
             }
             return 0;
@@ -588,13 +668,12 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
         case WM_CLOSE:
-            // While a recording is in flight the tray icon is up: hide the
-            // window instead of quitting. From Ready, close really quits.
-            if (g.state != UiState::Ready) {
+            // While the tray is up (preparing/recording/paused/saving) closing
+            // the window just hides it; from Ready, close really quits.
+            if (trayIsVisible())
                 ShowWindow(h, SW_HIDE);
-                return 0;
-            }
-            DestroyWindow(h);
+            else
+                DestroyWindow(h);
             return 0;
         case WM_DESTROY:
             trayHide();
