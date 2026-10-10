@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <thread>
 
 #include "gui_internal.h"
 
@@ -60,6 +61,7 @@ void setStatus(UiState st, const std::wstring& text) {
     }
     InvalidateRect(g.stDot, nullptr, TRUE);
     updateStateIcons();  // title bar / taskbar icon follows the state color
+    traySetState(st);    // no-op while the tray icon is hidden
 }
 
 // One vocabulary for the status text, status dot and title-bar prefix.
@@ -250,6 +252,7 @@ void updateBorderWindow() {
 
 void handleFinished() {
     if (!g.sess) return;
+    KillTimer(g.wnd, TIMER_SAVING);  // visuals may have been deferred
     const bool hadError = g.sess->statHadError.load();
     const std::string err = g.sess->lastError();
     const std::wstring path = g.sess->settings().outputPath;
@@ -271,47 +274,103 @@ void handleFinished() {
         showError(err);
     setStatus(UiState::Ready,
               hadError ? loadStr(IDS_STATUS_ERROR) : loadStr(IDS_STATUS_SAVED));
+    trayHide();
 
-    if (g.quitting) DestroyWindow(g.wnd);
+    // Recording stopped: bring the window back up front.
+    ShowWindow(g.wnd, SW_SHOW);
+    SetForegroundWindow(g.wnd);
 }
 
 void onStart() {
     if (g.sess || g.state != UiState::Ready) return;  // already recording/preparing
     RecorderSettings s = settingsFromUi();
     saveUiSettings();  // remember the settings used
-    clearStatsLabels();  // fresh stats; the status column shows 准备中
-    setStatus(UiState::Preparing);
-    updateTitle();
-    EnableWindow(g.btnStart, FALSE);  // gray out while preparing
-    EnableWindow(g.btnPause, FALSE);
-    UpdateWindow(g.wnd);  // paint "准备中" + gray dot before the blocking init
+    clearStatsLabels();
+    g.state = UiState::Preparing;  // logical state; visuals deferred by 10 ms
+
+    // Run the blocking session init on a helper thread and keep pumping
+    // messages: the UI stays responsive, and if init finishes faster than
+    // kTransientStateMs no Preparing visuals (disabled buttons, blue dot,
+    // icon, tray, title) are shown at all.
     auto sess = std::make_unique<RecorderSession>();
     sess->onFinished = [] { PostMessageW(g.wnd, WM_APP_FINISHED, 0, 0); };
     std::string err;
-    if (!sess->start(s, err)) {
-        setUiIdle();
+    bool ok = false;
+    bool visualsShown = false;
+    bool quitPosted = false;
+    const ULONGLONG t0 = GetTickCount64();
+    HANDLE done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    std::thread starter([&] {
+        ok = sess->start(s, err);
+        SetEvent(done);
+    });
+    for (;;) {
+        const ULONGLONG now = GetTickCount64();
+        const DWORD wait =
+            visualsShown || quitPosted
+                ? INFINITE
+                : (now - t0 >= kTransientStateMs ? 0
+                                                 : static_cast<DWORD>(kTransientStateMs - (now - t0)));
+        const DWORD wr = MsgWaitForMultipleObjects(1, &done, FALSE, wait, QS_ALLINPUT);
+        if (wr == WAIT_OBJECT_0) break;
+        MSG m;
+        while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+            if (m.message == WM_QUIT) {
+                quitPosted = true;
+                continue;  // re-posted after the session settles below
+            }
+            TranslateMessage(&m);
+            DispatchMessageW(&m);
+        }
+        if (!visualsShown && !quitPosted && GetTickCount64() - t0 >= kTransientStateMs) {
+            visualsShown = true;
+            EnableWindow(g.btnStart, FALSE);  // gray out while preparing
+            EnableWindow(g.btnPause, FALSE);
+            setStatus(UiState::Preparing);    // blue dot/icon + 准备中
+            updateTitle();
+            trayShow();
+            UpdateWindow(g.wnd);
+        }
+        if (quitPosted) break;
+    }
+    WaitForSingleObject(done, INFINITE);
+    starter.join();
+    CloseHandle(done);
+
+    if (quitPosted) {
+        if (ok) {
+            g.sess = std::move(sess);
+            g.sess->requestStop();
+        }
+        trayHide();
+        g.state = UiState::Ready;
+        PostQuitMessage(static_cast<int>(0));
+        return;
+    }
+    if (!ok) {
+        trayHide();      // no-op when the tray was never shown
+        setUiIdle();     // re-enables controls (safe even if never disabled)
         setStatus(UiState::Ready);
         showError(err);
         return;
     }
     g.sess = std::move(sess);
     setUiRecording();
-    setStatus(UiState::Recording);
+    setStatus(UiState::Recording);  // shows the tray as a side effect
     updateTitle();
+    blinkRecordingStart();
     createBorderWindow();
 }
 
 void doStop() {
     if (!g.sess || g.state == UiState::Saving) return;
     g.sess->requestStop();
-    setStatus(UiState::Saving);
-    updateTitle();
+    g.state = UiState::Saving;  // logical; visuals deferred by 10 ms
+    SetTimer(g.wnd, TIMER_SAVING, kTransientStateMs, nullptr);
     // Switch the fps readout to the average for 保存中/保存成功.
     updateStatsLabels(g.sess->statFps.load(), g.sess->statAvgFps.load(),
                       g.sess->statBytes.load(),
                       static_cast<double>(g.sess->statActiveNs.load()) / 1e9, true);
-    EnableWindow(g.btnStart, FALSE);
-    EnableWindow(g.btnPause, FALSE);
 }
 
 void onPoll() {
@@ -467,6 +526,19 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                     saveUiSettings();
                 }
             }
+            if (id == IDM_TRAY_SHOW) {
+                ShowWindow(h, SW_SHOW);
+                SetForegroundWindow(h);
+                return 0;
+            }
+            if (id == IDM_TRAY_PAUSE && g.sess) {
+                g.sess->requestPauseToggle();
+                return 0;
+            }
+            if (id == IDM_TRAY_STOP && g.sess) {
+                doStop();
+                return 0;
+            }
             if (code == BN_CLICKED) {
                 if (id == IDC_START) {
                     if (g.sess && g.state != UiState::Saving)
@@ -482,7 +554,24 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_TIMER:
-            if (wp == TIMER_POLL) onPoll();
+            if (wp == TIMER_POLL) {
+                onPoll();
+            } else if (wp == TIMER_SAVING) {
+                // Saving outlasted the transient threshold: show it now
+                // (disabled buttons, blue dot/icon, tray, title).
+                KillTimer(h, TIMER_SAVING);
+                if (g.state == UiState::Saving && g.sess) {
+                    EnableWindow(g.btnStart, FALSE);
+                    EnableWindow(g.btnPause, FALSE);
+                    setStatus(UiState::Saving);
+                    updateTitle();
+                }
+            } else {
+                trayHandleTimer(static_cast<UINT>(wp));
+            }
+            return 0;
+        case WM_APP_TRAY:
+            trayHandleMessage(wp, lp);
             return 0;
         case WM_APP_FINISHED:
             handleFinished();
@@ -499,20 +588,16 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
         }
         case WM_CLOSE:
-            if (g.sess && g.sess->isRunning()) {
-                if (!g.quitting) {
-                    if (MessageBoxW(g.wnd, loadStr(IDS_CONFIRM_QUIT).c_str(),
-                                    loadStr(IDS_APP_TITLE).c_str(),
-                                    MB_OKCANCEL | MB_ICONQUESTION) == IDOK) {
-                        g.quitting = true;
-                        doStop();
-                    }
-                }
-                return 0;  // window is destroyed in handleFinished()
+            // While a recording is in flight the tray icon is up: hide the
+            // window instead of quitting. From Ready, close really quits.
+            if (g.state != UiState::Ready) {
+                ShowWindow(h, SW_HIDE);
+                return 0;
             }
             DestroyWindow(h);
             return 0;
         case WM_DESTROY:
+            trayHide();
             destroyBorderWindow();
             g.sess.reset();
             destroyStateIcons();
@@ -525,6 +610,8 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
+    // STA for shell COM used on this thread (taskbar overlay, tray).
+    const bool comInit = SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES};
     InitCommonControlsEx(&icc);
@@ -578,5 +665,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         }
     }
     if (g.font) DeleteObject(g.font);
+    releaseTaskbarCom();  // drop the STA ref before CoUninitialize
+    if (comInit) CoUninitialize();
     return static_cast<int>(msg.wParam);
 }

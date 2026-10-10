@@ -43,4 +43,7 @@
 
 // Dialogs
 #define IDS_ERR_TITLE        150
-#define IDS_CONFIRM_QUIT     151
+
+// Tray
+#define IDS_TRAY_SHOW        160
+#define IDS_TRAY_TIP_FMT     161  // "屏幕录制 - %ls"

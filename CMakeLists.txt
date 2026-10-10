@@ -31,6 +31,7 @@ add_executable(RecordingGui WIN32
     src/gui.cpp
     src/icons.cpp
     src/settings.cpp
+    src/tray.cpp
     src/gui.rc
 )
 target_link_libraries(RecordingGui PRIVATE recorder_core comctl32 comdlg32)
@@ -47,4 +48,8 @@ if(NOT MSVC)
     add_custom_command(TARGET RecordingGui POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_mingw_bin}/libwinpthread-1.dll" $<TARGET_FILE_DIR:RecordingGui>)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        # Strip symbols for a smaller release binary.
+        target_link_options(RecordingGui PRIVATE -s)
+    endif()
 endif()

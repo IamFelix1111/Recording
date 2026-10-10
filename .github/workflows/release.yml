@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: mingw64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            zip
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: |
+          mkdir -p package
+          cp build/RecordingGui.exe package/
+          cp build/libwinpthread-1.dll package/
+          cp README.md LICENSE package/
+          zip -r "Recording-${GITHUB_REF_NAME}-win64.zip" package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Recording-${{ github.ref_name }}-win64
+          path: Recording-*-win64.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Recording-*-win64.zip
+          generate_release_notes: true
+          # Tags with a hyphen (v0.1.0-test / -rc1 / -beta) publish as pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}

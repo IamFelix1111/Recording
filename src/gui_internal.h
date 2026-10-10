@@ -25,7 +25,16 @@ constexpr int IDC_GDI = 1007;
 constexpr int IDC_START = 1008;  // dual purpose: 开始 (idle) / 停止 (recording)
 constexpr int IDC_PAUSE = 1009;
 constexpr UINT WM_APP_FINISHED = WM_APP + 1;
+constexpr UINT WM_APP_TRAY = WM_APP + 2;  // Shell_NotifyIcon callback
 constexpr UINT TIMER_POLL = 1;
+constexpr UINT TIMER_SAVING = 2;      // defer 保存中 visuals (transient skip)
+constexpr UINT TIMER_TRAYCLICK = 3;   // tray left-click vs double-click
+// States faster than this are not shown (Preparing/Saving visuals).
+constexpr DWORD kTransientStateMs = 10;
+// Tray context-menu command ids (routed through WM_COMMAND).
+constexpr int IDM_TRAY_SHOW = 2001;
+constexpr int IDM_TRAY_PAUSE = 2002;
+constexpr int IDM_TRAY_STOP = 2003;
 
 // --- combo box index conventions (single source of truth) -------------------
 // Monitor combo: entry kMonitorSelAllMonitors = "all monitors" (virtual
@@ -66,12 +75,13 @@ struct App {
     HWND stTime = nullptr, stFps = nullptr, stSize = nullptr;
     HFONT font = nullptr;
     UINT dpi = 96;
-    bool quitting = false;
     bool loading = false;  // suppress auto-save while restoring settings
     // Pre-generated state icons, one row per bucket (see kIconBucketCount).
     // [0]=big (taskbar/Alt-Tab), [1]=small (title bar).
     HICON stateIcons[kIconBucketCount][2] = {};
-    bool blinkOn = true;  // recording blink phase shown on the big icon
+    HICON overlayDot = nullptr;    // taskbar overlay badge (recording, red)
+    HICON overlayBlank = nullptr;  // fully transparent overlay (blink "off")
+    bool blinkOn = true;  // recording blink phase shown on overlay/tray
     UiState state = UiState::Ready;
     // Last text pushed to each label - skips redundant WM_SETTEXT in onPoll.
     std::wstring lastTitle, lastStatus, lastTime, lastFps, lastSize;
@@ -112,8 +122,26 @@ int stateIconBucket(UiState st);
 void ensureStateIcons();
 void destroyStateIcons();
 void updateStateIcons();
-// While recording, toggles the big icon between red and dim red (~1 Hz).
+// While recording, blinks the taskbar overlay badge (red dot <-> none) and
+// mirrors the phase onto the tray icon (red <-> dim red).
 void onBlinkTick();
+// Entering the recording state: shows the overlay badge immediately.
+void blinkRecordingStart();
+// Clears the taskbar overlay badge (e.g. when leaving the recording state).
+void clearTaskbarOverlay();
+// Releases the ITaskbarList3 reference before CoUninitialize.
+void releaseTaskbarCom();
+
+// --- tray icon (tray.cpp) -----------------------------------------------------
+// Visible while Preparing/Recording/Paused/Saving; hidden when Ready.
+void trayShow();
+void trayHide();
+void traySetState(UiState st);
+// Applies the blink phase to the tray icon while recording.
+void traySetBlinkPhase(bool on);
+// Handles WM_APP_TRAY / TIMER_TRAYCLICK in the main wndProc; true = handled.
+bool trayHandleMessage(WPARAM wp, LPARAM lp);
+bool trayHandleTimer(UINT id);
 
 // --- settings (settings.cpp) --------------------------------------------------
 RecorderSettings settingsFromUi();
