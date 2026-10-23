@@ -1,7 +1,7 @@
 # Recording — Windows 屏幕录制器
 
 零依赖的原生 Win32 屏幕录制程序（C++）：DXGI Desktop Duplication 采集（GDI 自动回退），
-Media Foundation H.264 编码输出 MP4，硬件编码可用时自动启用。
+Media Foundation H.264 编码输出 MP4，硬件编码可用时自动启用。界面内置中英双语，自动跟随系统语言。
 
 ## 快速上手
 

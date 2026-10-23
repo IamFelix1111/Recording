@@ -27,6 +27,7 @@
   紧跟 HH 的 MM 为分钟），保存时刻展开为实际路径
 - **设置记忆**：输出目录、显示器、帧率、码率、鼠标、后端等选项持久化，任何更改立即保存，重启自动恢复
 - **自动建目录**：输出目录不存在时自动创建
+- **界面语言**：内置中文/英文双语资源，自动跟随系统 UI 语言（翻译只需改 `gui.rc` 字符串表）
 
 ## 构建
 
@@ -77,7 +78,7 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 | `src/gui/pthreadshim.cpp`           | pthread 符号垫片（SRWLOCK/FLS 实现），使 exe 不依赖 winpthread DLL |
 | `src/gui/settings.cpp`              | 设置持久化与 UI → 录制参数映射                                     |
 | `src/gui/gui_internal.h`            | GUI 内部共享头：`App`/`UiState`、共享声明、组合框索引常量          |
-| `src/resource.h` / `src/gui/gui.rc` | 字符串表（全部 UI 文案，**翻译只需改 gui.rc**）与公共控件 v6 清单  |
+| `src/gui/resource.h` / `src/gui/gui.rc` | 字符串表（中英双语，自动跟随系统语言）、VERSIONINFO 版本信息与公共控件 v6 清单 |
 | `tools/e2e.ps1`                 | E2E 回归套件（重构安全网）                                         |
 
 详细架构（模块地图、数据流、GUI 状态机、线程模型、渲染性能、MinGW 陷阱清单）见
@@ -90,3 +91,4 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 - 每帧显示时长按实际采集间隔计算（钳制在 0.5–10 帧周期），保证回放时长与真实录制时长一致
 - 文件大小统计优先取编码器实时字节数（`IMFSinkWriter::GetStatistics`），结束时以磁盘实际大小为准
 - 会话初始化在后台线程执行、主线程持续泵消息：UI 不冻结，且初始化快于 10ms 时整个「准备中」状态不出现
+- exe 属性包含版本/公司/许可证信息（VERSIONINFO 资源，中英双语，随系统语言显示）
