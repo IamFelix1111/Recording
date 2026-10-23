@@ -7,7 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Shared recording core: capture backends + H.264 encoder + session control.
 add_library(recorder_core STATIC
     src/recorder.cpp
-    src/capture.cpp
+    src/fsutil.cpp
+    src/pathtokens.cpp
+    src/capture_monitors.cpp
+    src/capture_cursor.cpp
+    src/capture_gdi.cpp
+    src/capture_dxgi.cpp
     src/encoder.cpp
 )
 target_include_directories(recorder_core PUBLIC src)

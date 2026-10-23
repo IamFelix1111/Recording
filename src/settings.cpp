@@ -9,6 +9,8 @@
 #include <cstdio>
 
 #include "gui_internal.h"
+#include "fsutil.h"
+#include "pathtokens.h"
 
 RecorderSettings settingsFromUi() {
     RecorderSettings s;

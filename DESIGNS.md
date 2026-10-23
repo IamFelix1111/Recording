@@ -2,6 +2,28 @@
 
 > 存放经评审定稿的重要设计方案。方案一经冻结不再纸面打磨，后续问题在实现与回归中暴露修复。
 
+## 重构方案（v1，待确认）
+
+**目标**：纯结构移动，零行为变更——提升可维护性，并为分辨率方案 v5 与窗口录制铺路。约 2700 行代码中 `gui.cpp`(711)/`capture.cpp`(457)/`recorder.cpp`(439) 三户承载了过多职责。
+
+**Phase 0 — 安全网（先行）**：
+- 把积累的 E2E 验证固化为 `tools/e2e.ps1`（录制流程/托盘交互/边框几何/任务栏/退出路径/导入表无 winpthread）；重构前跑基线，每 Phase 后回归
+- 无此安全网不动其余 Phase
+
+**Phase 1 — 采集/核心拆分**：
+- `capture.cpp` → `capture_monitors.cpp`（`listMonitors`）、`capture_cursor.cpp`（`loadCursorImages`/`overlayCursor`）、`capture_gdi.cpp`、`capture_dxgi.cpp`（两后端类各自成文件）
+- `recorder.cpp` → 抽出 `fsutil.cpp`（`dirExists`/`fileSizeOf`/`ensureDirPath`/`parentPathOf`/`fileNameOf`）、`pathtokens.cpp`（已知文件夹 GUID + `expandRootToken` + `expandDateTimeTokens`）；`worker()` 的初始化段抽为独立函数（v5 分段化的接触点）
+
+**Phase 2 — GUI 拆分**：
+- `gui.cpp` → `gui_main.cpp`（wWinMain/类注册/消息循环）、`controls.cpp`（`createControls`/`fillCombos`/`onBrowse`）、`flow.cpp`（`onStart`/`doStop`/`onPoll`/`handleFinished`——`onStart` 内联的启动器抽为 `SessionLaunch` 小结构）、`border.cpp`（四条边条全套）
+- `App` 结构分组成员：`Controls`/`Caches`/`State`（仅聚合，不改语义）
+
+**Phase 3 — 约定统一与清理**：
+- 统一链接性约定：头文件声明的函数=全局定义；仅内部函数进匿名命名空间（历史上两次踩坑点）
+- 死代码/未用成员清理；`ARCHITECTURE.md`/`README` 结构表同步
+
+**原则**：每 Phase 独立构建+E2E 全绿后单独提交（可回滚）；不改公共接口签名、不改行为、不混入 v5 功能；`pthreadshim`/`icons`/`tray`/`settings`/`encoder` 维持现状（尺寸健康）。
+
 ## 分辨率变化应对方案（v5，经四轮评审修订，已冻结）
 
 **状态**：设计定稿，待实现（顺序建议：recorder 侧分段/临时/拼接基建 → 测试模式回归 → GUI 告知框）

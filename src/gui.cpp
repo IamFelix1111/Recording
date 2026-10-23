@@ -15,6 +15,8 @@
 #include <memory>
 
 #include "gui_internal.h"
+#include "fsutil.h"
+#include "pathtokens.h"
 
 App g;
 // Red border rendered as four separate strip windows (top/bottom/left/right).

@@ -29,6 +29,26 @@ void postCommand(int id) {
     PostMessageW(g.wnd, WM_COMMAND, MAKEWPARAM(id, 0), 0);
 }
 
+// Off-screen but WS_VISIBLE 1x1 host for tray context menus. Menus close
+// instantly unless their owner's thread owns the foreground, and
+// SetForegroundWindow fails on the hidden main window; this host is always
+// eligible. Lives for the process lifetime.
+// File-scope + lazy null-check init (NOT a function-local static: its
+// guard would pull libstdc++'s __cxa_guard, which references pthread_cond_*
+// symbols the pthreadshim does not provide, silently re-importing
+// libwinpthread-1.dll). UI-thread-only, so no synchronization is needed.
+HWND g_menuHost = nullptr;
+
+HWND menuHostWnd() {
+    if (!g_menuHost) {
+        g_menuHost = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, L"STATIC", L"",
+            WS_POPUP | WS_VISIBLE, -100, -100, 1, 1, g.wnd, nullptr,
+            GetModuleHandleW(nullptr), nullptr);
+    }
+    return g_menuHost;
+}
+
 void showContextMenu() {
     const HMENU menu = CreatePopupMenu();
     // During Preparing/Saving only 退出 is available; pause/stop are
@@ -49,10 +69,12 @@ void showContextMenu() {
 
     POINT pt{};
     GetCursorPos(&pt);
-    // Foreground activation so the menu closes when clicking elsewhere.
-    SetForegroundWindow(g.wnd);
-    const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
-                                   pt.x, pt.y, 0, g.wnd, nullptr);
+    HWND host = menuHostWnd();
+    SetForegroundWindow(host);
+    const int cmd =
+        TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
+                       pt.x, pt.y, 0, host, nullptr);
+    PostMessageW(host, WM_NULL, 0, 0);  // release the menu capture cleanly
     DestroyMenu(menu);
     if (cmd) postCommand(cmd);
 }
@@ -71,7 +93,7 @@ void trayShow() {
     n.uCallbackMessage = WM_APP_TRAY;
     n.hIcon = g.stateIcons[stateIconBucket(g.state)][1];
     wcscpy_s(n.szTip, loadStr(IDS_APP_TITLE).c_str());
-    Shell_NotifyIconW(NIM_ADD, &n);
+    if (!Shell_NotifyIconW(NIM_ADD, &n)) n = {};  // stay hidden on failure
 }
 
 void trayHide() {

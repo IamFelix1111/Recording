@@ -82,16 +82,3 @@ private:
 
 // Bitrate suggestion: ~0.12 bits per pixel per frame (1080p30 ~ 7.5 Mbps).
 std::uint64_t autoBitrate(int width, int height, int fps);
-
-// Win32 path helpers (kept <filesystem>-free so libstdc++ locale/EH glue
-// that drags in winpthreads is not linked).
-bool dirExists(const std::wstring& path);
-std::uint64_t fileSizeOf(const std::wstring& path);  // 0 on failure
-bool ensureDirPath(const std::wstring& dir);         // recursive CreateDirectoryW
-std::wstring parentPathOf(const std::wstring& path);
-std::wstring fileNameOf(const std::wstring& path);
-
-// "<Videos>/Recording-YYYYMMDD-HHMMSS.mp4" with literal date/time tokens.
-std::wstring defaultRecordingTemplate();
-// Replaces YYYYMMDD / HHMMSS tokens in the path with the current time.
-std::wstring expandRecordingPath(const std::wstring& path);
