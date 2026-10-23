@@ -3,10 +3,13 @@
 1 24 "gui.manifest"
 1 ICON "icon.ico"
 
-// UTF-8 encoded; Simplified Chinese. Translate by editing this table only.
+// UTF-8 encoded source; resources are bilingual (en-US + zh-CN). The loader
+// (LoadStringW / Explorer) picks the block matching the user's UI language,
+// falling back to English. Edit strings only in the two tables below.
+
 #pragma code_page(65001)
 
-// --- version / product info -------------------------------------------------
+// --- version / product info (bilingual) --------------------------------------
 
 1 VERSIONINFO
 FILEVERSION    0,3,0,0
@@ -19,14 +22,26 @@ FILESUBTYPE    0x0L
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        BLOCK "080404b0"
+        BLOCK "040904b0"           // English (US)
+        BEGIN
+            VALUE "Comments",         "Windows screen recorder (C++/Win32)\0"
+            VALUE "CompanyName",      "IamFelix\0"
+            VALUE "FileDescription",  "Screen Recorder\0"
+            VALUE "FileVersion",      "0,3,0,0\0"
+            VALUE "InternalName",     "RecordingGui\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 IamFelix - GPLv3\0"
+            VALUE "OriginalFilename", "RecordingGui.exe\0"
+            VALUE "ProductName",      "Recording\0"
+            VALUE "ProductVersion",   "0.3.0\0"
+        END
+        BLOCK "080404b0"           // Chinese (Simplified)
         BEGIN
             VALUE "Comments",         "Windows 屏幕录制程序（C++/Win32）\0"
-            VALUE "CompanyName",      "IamFelix1111\0"
+            VALUE "CompanyName",      "IamFelix\0"
             VALUE "FileDescription",  "屏幕录制\0"
             VALUE "FileVersion",      "0,3,0,0\0"
             VALUE "InternalName",     "RecordingGui\0"
-            VALUE "LegalCopyright",   "Copyright (C) 2026 IamFelix1111 - GPLv3\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 IamFelix - GPLv3\0"
             VALUE "OriginalFilename", "RecordingGui.exe\0"
             VALUE "ProductName",      "Recording\0"
             VALUE "ProductVersion",   "0.3.0\0"
@@ -34,10 +49,64 @@ BEGIN
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x0804, 0x04B0
+        VALUE "Translation", 0x0409, 0x04B0, 0x0804, 0x04B0
     END
 END
 
+// --- English (US) strings -----------------------------------------------------
+// windres packs LANGUAGE primary,sublang as LANGID: 9,1 = 0x0409;
+// Simplified Chinese is 4,2 = 0x0804 (4,1 is TRADITIONAL and never matches
+// a zh-CN system - the loader then falls through to the English table).
+
+LANGUAGE 9, 1
+STRINGTABLE
+BEGIN
+    IDS_APP_TITLE        "Screen Recorder"
+    IDS_TITLE_REC_FMT    "(%ls) %ls  %ls %.1f fps"
+    IDS_TITLE_STATE_FMT  "(%ls) %ls"
+
+    IDS_STATE_READY      "Ready"
+    IDS_STATE_PREPARING  "Preparing"
+    IDS_STATE_RECORDING  "Recording"
+    IDS_STATE_PAUSED     "Paused"
+    IDS_STATE_SAVING     "Saving"
+    IDS_STATUS_SAVED     "Saved"
+    IDS_STATUS_ERROR     "Recording error - file may be incomplete"
+
+    IDS_BTN_START        "Start"
+    IDS_BTN_STOP         "Stop"
+    IDS_BTN_PAUSE        "Pause"
+    IDS_BTN_RESUME       "Resume"
+    IDS_BROWSE           "Browse..."
+
+    IDS_LBL_MONITOR      "Monitor"
+    IDS_LBL_FPS          "FPS"
+    IDS_LBL_BITRATE      "Bitrate"
+    IDS_LBL_PATH         "Output"
+    IDS_CHK_CURSOR       "Record mouse cursor"
+    IDS_CHK_GDI          "Use GDI-compatible backend"
+    IDS_MONITOR_ALL      "All monitors (virtual desktop)"
+    IDS_MONITOR_FMT      "%d: %ldx%ld%ls"
+    IDS_MONITOR_PRIMARY  " (Primary)"
+    IDS_BITRATE_AUTO     "Auto"
+
+    IDS_STATS_TIME_FMT   "Time %ls"
+    IDS_STATS_FRAMES_FMT "Frames %llu"
+    IDS_STATS_FPS_FMT    "%.1f fps"
+    IDS_STATS_SIZE_FMT   "%.1f MB"
+    IDS_STATS_AVG_FMT    "Avg %.1f fps"
+
+    IDS_ERR_TITLE        "Error"
+    IDS_CONFIRM_QUIT     "Recording in progress. Stop and exit?"
+
+    IDS_TRAY_SHOW        "Show Window"
+    IDS_TRAY_QUIT        "Exit"
+    IDS_TRAY_TIP_FMT     "Screen Recorder - %ls"
+END
+
+// --- Chinese (Simplified) strings ---------------------------------------------
+
+LANGUAGE 4, 2
 STRINGTABLE
 BEGIN
     IDS_APP_TITLE        "屏幕录制"

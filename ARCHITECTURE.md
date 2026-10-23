@@ -36,6 +36,20 @@ cmake-build-debug/
 
 **链接性约定**：头文件（`*.h`）中声明的函数 = 全局链接定义；仅单个 `.cpp` 内部使用的函数 → 匿名命名空间或 `static`；跨 TU 共享的"内部"符号走 `*_internal.h`。禁止函数内 `static` 局部变量初始化（guard 会拉入 winpthread）。
 
+## 版本号更新位置
+
+发版（或版本号变更）时需同步修改以下位置：
+
+| 位置 | 内容 |
+|------|------|
+| `src/gui/gui.rc` | `FILEVERSION`/`PRODUCTVERSION` 数值（如 `0,3,0,0`）+ VERSIONINFO 两语言块的 `FileVersion`/`ProductVersion` 字符串 |
+| `src/gui/resource.h` | `REC_VERSION_MAJOR/MINOR/PATCH/BUILD` 与 `REC_VERSION_STRING`/`REC_VERSION_CSV` 宏（信息性，供 C++ 侧引用） |
+| `/web/src/Recording/i18n.js` | 网页端版本展示（stable/pre-release 分开记录） |
+| `/web/src/Recording/index.html` | 网页端引用的版本 |
+| Git 标签 | 发布时打 `vX.Y.Z` 并推送 → CI 自动构建发布；含连字符（`-test`/`-rc1`/`-beta`）发布为预发布版 |
+
+注意 `web/` 在本仓库 `.gitignore` 中（独立仓库），修改后需在**该仓库内**提交推送。
+
 ## 数据流
 
 ```
