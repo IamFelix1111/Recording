@@ -34,6 +34,9 @@ endif()
 # GUI front-end (Win32, common controls v6 via embedded manifest).
 add_executable(RecordingGui WIN32
     src/gui.cpp
+    src/border.cpp
+    src/controls.cpp
+    src/flow.cpp
     src/icons.cpp
     src/settings.cpp
     src/tray.cpp

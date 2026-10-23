@@ -155,3 +155,22 @@ RecorderSettings settingsFromUi();
 std::wstring configIniPath();
 void saveUiSettings();
 void loadUiSettings();
+
+// --- red border frame (border.cpp) ---------------------------------------------
+// Rendered as four strip windows: topmost, click-through, excluded from
+// capture. No single window spans the monitor (fullscreen heuristic).
+void registerBorderClass(HINSTANCE inst);  // "RecordingBorder" window class
+void createBorderWindow();
+void destroyBorderWindow();
+void updateBorderWindow();
+
+// --- control layout (controls.cpp) ---------------------------------------------
+void createControls();
+void fillCombos();
+void onBrowse();  // output-path "Browse..." dialog
+
+// --- recording flow (flow.cpp) ---------------------------------------------------
+void onStart();
+void doStop();
+void onPoll();          // 200 ms UI poll: stats, blink, state sync
+void handleFinished();  // session ended: stats, path move, UI reset
