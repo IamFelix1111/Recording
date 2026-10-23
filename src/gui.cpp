@@ -17,7 +17,11 @@
 #include "gui_internal.h"
 
 App g;
-HWND g_borderWnd = nullptr;
+// Red border rendered as four separate strip windows (top/bottom/left/right).
+// No single window spans the whole monitor: a topmost window with exactly
+// fullscreen bounds triggers the shell's fullscreen heuristic and auto-hides
+// the taskbar, so strips keep the geometry pixel-exact AND heuristic-safe.
+HWND g_borderWnds[4] = {};
 
 int S(int v) { return MulDiv(v, static_cast<int>(g.dpi), 96); }
 
@@ -60,7 +64,10 @@ void setStatus(UiState st, const std::wstring& text) {
     }
     InvalidateRect(g.stDot, nullptr, TRUE);
     updateStateIcons();  // title bar / taskbar icon follows the state color
-    traySetState(st);    // no-op while the tray icon is hidden
+    // Activity states keep the tray up (it was lost from the transient block
+    // in an earlier refactor); Ready relies on handleFinished's trayHide.
+    if (st != UiState::Ready && !trayIsVisible()) trayShow();
+    traySetState(st);    // applies the state icon/tip
 }
 
 // One vocabulary for the status text, status dot and title-bar prefix.
@@ -171,8 +178,9 @@ void showError(const std::string& e) {
 }
 
 // --- red border frame around the recorded region ---------------------------
-// Topmost, click-through, and excluded from screen capture
-// (WDA_EXCLUDEFROMCAPTURE) so it never appears in the video itself.
+// Rendered as four strip windows (see g_borderWnds): topmost, click-through,
+// and excluded from screen capture (WDA_EXCLUDEFROMCAPTURE) so they never
+// appear in the video itself. Each strip paints its whole client area.
 
 namespace {
 
@@ -185,16 +193,9 @@ LRESULT CALLBACK borderProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             HDC dc = BeginPaint(h, &ps);
             RECT rc;
             GetClientRect(h, &rc);
-            const int bw = S(5);
             const bool paused = g.sess && g.sess->isPaused();
             HBRUSH br = CreateSolidBrush(paused ? RGB(230, 170, 0) : RGB(220, 30, 30));
-            RECT edges[4] = {
-                {0, 0, rc.right, bw},
-                {0, rc.bottom - bw, rc.right, rc.bottom},
-                {0, 0, bw, rc.bottom},
-                {rc.right - bw, 0, rc.right, rc.bottom},
-            };
-            for (const RECT& r : edges) FillRect(dc, &r, br);
+            FillRect(dc, &rc, br);
             DeleteObject(br);
             EndPaint(h, &ps);
             return 0;
@@ -205,9 +206,11 @@ LRESULT CALLBACK borderProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 void destroyBorderWindow() {
-    if (g_borderWnd) {
-        DestroyWindow(g_borderWnd);
-        g_borderWnd = nullptr;
+    for (HWND& h : g_borderWnds) {
+        if (h) {
+            DestroyWindow(h);
+            h = nullptr;
+        }
     }
 }
 
@@ -219,36 +222,53 @@ void createBorderWindow() {
     if (w <= 0 || h <= 0) return;
     int bw = S(5);
     if (bw * 6 > w || bw * 6 > h) bw = (std::min)(w, h) / 6;  // tiny regions
+    if (bw < 1) bw = 1;
 
-    g_borderWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE |
-            WS_EX_TOOLWINDOW,
-        L"RecordingBorder", nullptr, WS_POPUP, x, y, w, h, nullptr, nullptr,
-        GetModuleHandleW(nullptr), nullptr);
-    if (!g_borderWnd) return;
-
-    HRGN outer = CreateRectRgn(0, 0, w, h);
-    HRGN inner = CreateRectRgn(bw, bw, w - bw, h - bw);
-    CombineRgn(outer, outer, inner, RGN_DIFF);
-    SetWindowRgn(g_borderWnd, outer, FALSE);  // system owns outer now
-    DeleteObject(inner);
-
-    SetLayeredWindowAttributes(g_borderWnd, 0, 255, LWA_ALPHA);
-    // Keep the frame out of the captured video (Windows 10 2004+).
-    SetWindowDisplayAffinity(g_borderWnd, WDA_EXCLUDEFROMCAPTURE);
+    // Strip layout: top/bottom span the full width, left/right fill between.
+    // Sides may vanish on extremely flat regions; that is fine.
+    const RECT strips[4] = {
+        {x, y, x + w, y + bw},                       // top
+        {x, y + h - bw, x + w, y + h},               // bottom (pixel-exact)
+        {x, y + bw, x + bw, y + h - bw},             // left
+        {x + w - bw, y + bw, x + w, y + h - bw},     // right
+    };
+    const HINSTANCE inst = GetModuleHandleW(nullptr);
+    for (int i = 0; i < 4; ++i) {
+        if (strips[i].right <= strips[i].left || strips[i].bottom <= strips[i].top)
+            continue;
+        g_borderWnds[i] = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE |
+                WS_EX_TOOLWINDOW,
+            L"RecordingBorder", nullptr, WS_POPUP, strips[i].left, strips[i].top,
+            strips[i].right - strips[i].left, strips[i].bottom - strips[i].top,
+            nullptr, nullptr, inst, nullptr);
+        if (!g_borderWnds[i]) continue;
+        SetLayeredWindowAttributes(g_borderWnds[i], 0, 255, LWA_ALPHA);
+        // Keep the strip out of the captured video (Windows 10 2004+).
+        SetWindowDisplayAffinity(g_borderWnds[i], WDA_EXCLUDEFROMCAPTURE);
+        ShowWindow(g_borderWnds[i], SW_SHOWNOACTIVATE);
+    }
     g.borderPaused = g.sess->isPaused();
-    ShowWindow(g_borderWnd, SW_SHOWNOACTIVATE);
 }
 
 void updateBorderWindow() {
-    if (!g_borderWnd || !g.sess) return;
-    // Reassert topmost in case another topmost window covered the frame.
-    SetWindowPos(g_borderWnd, HWND_TOPMOST, 0, 0, 0, 0,
-                 SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+    if (!g.sess) return;
+    const bool anyUp = g_borderWnds[0] || g_borderWnds[1] || g_borderWnds[2] ||
+                       g_borderWnds[3];
+    if (!anyUp) return;
+    // Reassert topmost in case another topmost window covered the strips.
+    for (HWND h : g_borderWnds) {
+        if (h)
+            SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE |
+                             SWP_NOOWNERZORDER);
+    }
     const bool paused = g.sess->isPaused();
     if (paused != g.borderPaused) {
         g.borderPaused = paused;
-        InvalidateRect(g_borderWnd, nullptr, FALSE);
+        for (HWND h : g_borderWnds) {
+            if (h) InvalidateRect(h, nullptr, FALSE);
+        }
     }
 }
 
@@ -270,8 +290,12 @@ void handleFinished() {
 
     // The output path may have been edited while recording: the encoder is
     // bound to the original URL, so move the finished file to the new target.
-    std::wstring newPath = windowText(g.editPath);
-    if (!newPath.empty()) newPath = expandRecordingPath(newPath);
+    // Compare RAW box text (not expanded): an untouched token template would
+    // otherwise re-expand to a fresh HHMMSS and "move" on every recording.
+    const std::wstring nowPathText = windowText(g.editPath);
+    std::wstring newPath;
+    if (_wcsicmp(nowPathText.c_str(), g.startPathText.c_str()) != 0)
+        newPath = expandRecordingPath(nowPathText);
     if (!newPath.empty() && _wcsicmp(newPath.c_str(), oldPath.c_str()) != 0) {
         if (const std::wstring parent = parentPathOf(newPath); !parent.empty())
             ensureDirPath(parent);
@@ -310,6 +334,7 @@ void onStart() {
     if (g.sess || g.state != UiState::Ready) return;  // already recording/preparing
     RecorderSettings s = settingsFromUi();
     saveUiSettings();  // remember the settings used
+    g.startPathText = windowText(g.editPath);  // move-detection baseline
     clearStatsLabels();
     g.state = UiState::Preparing;  // logical state; visuals deferred by 10 ms
 

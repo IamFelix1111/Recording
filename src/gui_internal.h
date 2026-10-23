@@ -87,12 +87,16 @@ struct App {
     UiState state = UiState::Ready;
     // Last text pushed to each label - skips redundant WM_SETTEXT in onPoll.
     std::wstring lastTitle, lastStatus, lastTime, lastFps, lastSize;
+    // Path-box text as it was when the recording started: if unchanged at
+    // finish, the target stays the (already expanded) session path - token
+    // templates re-expand to a different HHMMSS and would always "move".
+    std::wstring startPathText;
     std::vector<MonitorInfo> monitors;
     std::unique_ptr<RecorderSession> sess;
     bool borderPaused = false;  // color currently shown by the border frame
 };
 extern App g;
-extern HWND g_borderWnd;
+extern HWND g_borderWnds[4];  // top, bottom, left, right border strips
 
 // --- shared helpers (defined in gui.cpp) -------------------------------------
 int S(int v);  // 96-dpi logical pixel -> device pixel
