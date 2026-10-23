@@ -6,6 +6,38 @@
 // UTF-8 encoded; Simplified Chinese. Translate by editing this table only.
 #pragma code_page(65001)
 
+// --- version / product info -------------------------------------------------
+
+1 VERSIONINFO
+FILEVERSION    0,3,0,0
+PRODUCTVERSION 0,3,0,0
+FILEFLAGSMASK  0x3FL
+FILEFLAGS      0x0L
+FILEOS         0x40004L   // VOS_NT_WINDOWS32
+FILETYPE       0x1L       // VFT_APP
+FILESUBTYPE    0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "Comments",         "Windows 屏幕录制程序（C++/Win32）\0"
+            VALUE "CompanyName",      "IamFelix1111\0"
+            VALUE "FileDescription",  "屏幕录制\0"
+            VALUE "FileVersion",      "0,3,0,0\0"
+            VALUE "InternalName",     "RecordingGui\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 IamFelix1111 - GPLv3\0"
+            VALUE "OriginalFilename", "RecordingGui.exe\0"
+            VALUE "ProductName",      "Recording\0"
+            VALUE "ProductVersion",   "0.3.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 0x04B0
+    END
+END
+
 STRINGTABLE
 BEGIN
     IDS_APP_TITLE        "屏幕录制"

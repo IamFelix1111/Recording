@@ -49,3 +49,11 @@
 #define IDS_TRAY_SHOW        160
 #define IDS_TRAY_QUIT        162
 #define IDS_TRAY_TIP_FMT     161  // "屏幕录制 - %ls"
+
+// Version - single source of truth for the VERSIONINFO resource.
+#define REC_VERSION_MAJOR 0
+#define REC_VERSION_MINOR 3
+#define REC_VERSION_PATCH 0
+#define REC_VERSION_BUILD 0
+#define REC_VERSION_STRING L"0.3.0"
+#define REC_VERSION_CSV    L"0,3,0,0"
