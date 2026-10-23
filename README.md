@@ -1,4 +1,4 @@
-# Recording — Windows 屏幕录制程序
+﻿# Recording — Windows 屏幕录制程序
 
 <img src="icon.svg" width="128" height="128" style="float: right" alt="Recording icon"/>
 
@@ -38,7 +38,7 @@ cmake --build build
 ```
 
 MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系统，无控制台窗口，
-**单文件即可运行**——线程/互斥用 Win32 原生实现，pthread 符号由 `src/pthreadshim.cpp` 垫片满足，
+**单文件即可运行**——线程/互斥用 Win32 原生实现，pthread 符号由 `src/gui/pthreadshim.cpp` 垫片满足，
 不依赖 `libwinpthread-1.dll`）。
 
 推送 `v*` 标签时 GitHub Actions 自动构建 Release（MinGW-w64 + `-O3` + 符号剥离），
@@ -63,21 +63,21 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 
 | 文件                            | 说明                                                                |
 |---------------------------------|---------------------------------------------------------------------|
-| `src/recorder.h/.cpp`           | 录制会话核心：工作线程、节奏控制、暂停/停止、实时统计              |
-| `src/capture.h` + `capture_*.cpp` | 采集：monitors（枚举）/cursor（指针合成）/gdi/dxgi 四个实现单元   |
-| `src/fsutil.h/.cpp`             | Win32 路径助手（存在/大小/递归建目录/父路径，无 `<filesystem>`）   |
-| `src/pathtokens.h/.cpp`         | 路径模板展开（已知文件夹令牌 + 逐个日期时间令牌）                  |
-| `src/encoder.h/.cpp`            | Media Foundation H.264 Sink Writer 封装与实时字节统计             |
-| `src/gui.cpp`                   | GUI 主文件：全局/助手、状态机与信息栏、`wndProc`、`wWinMain`       |
-| `src/border.cpp`                | 红色录制边框（四条边条窗口，防任务栏自动隐藏）                     |
-| `src/controls.cpp`              | 控件布局、组合框填充、路径浏览对话框                                |
-| `src/flow.cpp`                  | 录制流程：启动（后台初始化+瞬态抑制）/停止/轮询/收尾               |
-| `src/icons.cpp`                 | 状态图标/角标（预生成缓存、录制闪烁）、任务栏角标、抗锯齿状态圆点  |
-| `src/tray.cpp`                  | 系统托盘：单击/双击/中键/右键菜单交互，命令经 `WM_COMMAND` 路由    |
-| `src/pthreadshim.cpp`           | pthread 符号垫片（SRWLOCK/FLS 实现），使 exe 不依赖 winpthread DLL |
-| `src/settings.cpp`              | 设置持久化与 UI → 录制参数映射                                     |
-| `src/gui_internal.h`            | GUI 内部共享头：`App`/`UiState`、共享声明、组合框索引常量          |
-| `src/resource.h` / `src/gui.rc` | 字符串表（全部 UI 文案，**翻译只需改 gui.rc**）与公共控件 v6 清单  |
+| `src/core/recorder.h/.cpp`           | 录制会话核心：工作线程、节奏控制、暂停/停止、实时统计              |
+| `src/capture/capture.h` + `capture_*.cpp` | 采集：monitors（枚举）/cursor（指针合成）/gdi/dxgi 四个实现单元   |
+| `src/core/fsutil.h/.cpp`             | Win32 路径助手（存在/大小/递归建目录/父路径，无 `<filesystem>`）   |
+| `src/core/pathtokens.h/.cpp`         | 路径模板展开（已知文件夹令牌 + 逐个日期时间令牌）                  |
+| `src/core/encoder.h/.cpp`            | Media Foundation H.264 Sink Writer 封装与实时字节统计             |
+| `src/gui/gui.cpp`                   | GUI 主文件：全局/助手、状态机与信息栏、`wndProc`、`wWinMain`       |
+| `src/gui/border.cpp`                | 红色录制边框（四条边条窗口，防任务栏自动隐藏）                     |
+| `src/gui/controls.cpp`              | 控件布局、组合框填充、路径浏览对话框                                |
+| `src/gui/flow.cpp`                  | 录制流程：启动（后台初始化+瞬态抑制）/停止/轮询/收尾               |
+| `src/gui/icons.cpp`                 | 状态图标/角标（预生成缓存、录制闪烁）、任务栏角标、抗锯齿状态圆点  |
+| `src/gui/tray.cpp`                  | 系统托盘：单击/双击/中键/右键菜单交互，命令经 `WM_COMMAND` 路由    |
+| `src/gui/pthreadshim.cpp`           | pthread 符号垫片（SRWLOCK/FLS 实现），使 exe 不依赖 winpthread DLL |
+| `src/gui/settings.cpp`              | 设置持久化与 UI → 录制参数映射                                     |
+| `src/gui/gui_internal.h`            | GUI 内部共享头：`App`/`UiState`、共享声明、组合框索引常量          |
+| `src/resource.h` / `src/gui/gui.rc` | 字符串表（全部 UI 文案，**翻译只需改 gui.rc**）与公共控件 v6 清单  |
 | `tools/e2e.ps1`                 | E2E 回归套件（重构安全网）                                         |
 
 详细架构（模块地图、数据流、GUI 状态机、线程模型、渲染性能、MinGW 陷阱清单）见

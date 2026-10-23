@@ -6,16 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Shared recording core: capture backends + H.264 encoder + session control.
 add_library(recorder_core STATIC
-    src/recorder.cpp
-    src/fsutil.cpp
-    src/pathtokens.cpp
-    src/capture_monitors.cpp
-    src/capture_cursor.cpp
-    src/capture_gdi.cpp
-    src/capture_dxgi.cpp
-    src/encoder.cpp
+    src/core/recorder.cpp
+    src/core/fsutil.cpp
+    src/core/pathtokens.cpp
+    src/capture/capture_monitors.cpp
+    src/capture/capture_cursor.cpp
+    src/capture/capture_gdi.cpp
+    src/capture/capture_dxgi.cpp
+    src/core/encoder.cpp
 )
-target_include_directories(recorder_core PUBLIC src)
+target_include_directories(recorder_core PUBLIC src/core src/capture)
 target_compile_definitions(recorder_core PUBLIC
     _WIN32_WINNT=0x0A00
     WINVER=0x0A00
@@ -33,15 +33,15 @@ endif()
 
 # GUI front-end (Win32, common controls v6 via embedded manifest).
 add_executable(RecordingGui WIN32
-    src/gui.cpp
-    src/border.cpp
-    src/controls.cpp
-    src/flow.cpp
-    src/icons.cpp
-    src/settings.cpp
-    src/tray.cpp
-    src/pthreadshim.cpp
-    src/gui.rc
+    src/gui/gui.cpp
+    src/gui/border.cpp
+    src/gui/controls.cpp
+    src/gui/flow.cpp
+    src/gui/icons.cpp
+    src/gui/settings.cpp
+    src/gui/tray.cpp
+    src/gui/pthreadshim.cpp
+    src/gui/gui.rc
 )
 target_link_libraries(RecordingGui PRIVATE recorder_core comctl32 comdlg32)
 if(NOT MSVC)
