@@ -45,6 +45,11 @@ MSVC 与 MinGW-w64 均可编译，产出 `RecordingGui.exe`（Windows GUI 子系
 推送 `v*` 标签时 GitHub Actions 自动构建 Release（MinGW-w64 + `-O3` + 符号剥离），
 打包 `Recording-<tag>-win64.zip`（单文件 exe + 精简版 README + LICENSE）并发布 Release；
 含连字符的标签（`-test`/`-rc1`/`-beta`）发布为预发布版。
+CI 支持可选代码签名：仓库 Secrets 配置 `CERT_PFX_B64`（证书 PFX 的 base64）与
+`CERT_PFX_PASS`（PFX 密码）后自动对 exe 签名（含 RFC3161 时间戳，未配置则跳过）；
+当前使用自签名证书（保证完整性与防篡改，外部机器仍显示"未知发布者"）。
+Workflow 亦支持手动触发（Actions → Release → Run workflow）：仅构建+签名+上传
+artifact，不发布 Release。
 
 ## 许可证
 
