@@ -90,7 +90,7 @@ static void setTextIfChanged(HWND ctl, std::wstring& last, const wchar_t* text) 
 }
 
 void setUiRecording() {
-    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.chkGdi})
+    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.comboApi})
         EnableWindow(h, FALSE);
     // Live options stay enabled while recording: the cursor toggle applies
     // per frame; an edited output path moves the finished file on stop.
@@ -103,8 +103,8 @@ void setUiRecording() {
 }
 
 void setUiIdle() {
-    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.editPath, g.btnBrowse,
-                   g.chkCursor, g.chkGdi, g.btnStart})
+    for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.comboApi,
+                   g.editPath, g.btnBrowse, g.chkCursor, g.btnStart})
         EnableWindow(h, TRUE);
     EnableWindow(g.btnPause, FALSE);
     SetWindowTextW(g.btnStart, loadStr(IDS_BTN_START).c_str());
@@ -192,8 +192,9 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             // Persist the full configuration on every change (not only on start).
             if (!g.loading && !g.sess) {
                 if ((code == CBN_SELCHANGE &&
-                     (id == IDC_MONITOR || id == IDC_FPS || id == IDC_BITRATE)) ||
-                    (code == BN_CLICKED && (id == IDC_CURSOR || id == IDC_GDI)) ||
+                     (id == IDC_MONITOR || id == IDC_FPS || id == IDC_BITRATE ||
+                      id == IDC_API)) ||
+                    (code == BN_CLICKED && id == IDC_CURSOR) ||
                     (code == EN_CHANGE && id == IDC_PATH)) {
                     saveUiSettings();
                 }

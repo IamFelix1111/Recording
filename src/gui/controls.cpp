@@ -61,6 +61,10 @@ void fillCombos() {
         ComboBox_SetItemData(g.comboBitrate, idx, kBitrateMbps[i] * 1'000'000LL);
     }
     ComboBox_SetCurSel(g.comboBitrate, kBitrateAutoSel);
+
+    ComboBox_AddString(g.comboApi, loadStr(IDS_API_DXGI).c_str());
+    ComboBox_AddString(g.comboApi, loadStr(IDS_API_GDI).c_str());
+    ComboBox_SetCurSel(g.comboApi, kApiSelDxgi);
 }
 
 void createControls() {
@@ -78,8 +82,10 @@ void createControls() {
                              16, 52, 56, 22, 0);
     g.comboBitrate = createCtl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | WS_TABSTOP, 76,
                                52, 120, 200, IDC_BITRATE);
-    g.chkGdi = createCtl(L"BUTTON", loadStr(IDS_CHK_GDI).c_str(),
-                         BS_AUTOCHECKBOX | WS_TABSTOP, 210, 52, 220, 22, IDC_GDI);
+    g.lblApi = createCtl(L"STATIC", loadStr(IDS_LBL_API).c_str(), SS_CENTERIMAGE,
+                         210, 52, 34, 22, 0);
+    g.comboApi = createCtl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | WS_TABSTOP,
+                           248, 52, 128, 200, IDC_API);
 
     g.lblPath = createCtl(L"STATIC", loadStr(IDS_LBL_PATH).c_str(), SS_CENTERIMAGE, 16,
                           86, 56, 22, 0);
@@ -111,8 +117,8 @@ void createControls() {
     Button_SetCheck(g.chkCursor, BST_CHECKED);
 
     for (HWND h : {g.lblMonitor, g.comboMonitor, g.lblFps, g.comboFps, g.lblBitrate,
-                   g.comboBitrate, g.chkGdi, g.lblPath, g.editPath, g.btnBrowse,
-                   g.chkCursor, g.stDot, g.stStatus, g.stTime, g.stFps, g.stSize,
-                   g.btnStart, g.btnPause})
+                   g.comboBitrate, g.lblApi, g.comboApi, g.lblPath, g.editPath,
+                   g.btnBrowse, g.chkCursor, g.stDot, g.stStatus, g.stTime, g.stFps,
+                   g.stSize, g.btnStart, g.btnPause})
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g.font), TRUE);
 }

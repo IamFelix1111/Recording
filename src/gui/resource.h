@@ -28,7 +28,7 @@
 #define IDS_LBL_BITRATE      132
 #define IDS_LBL_PATH         133
 #define IDS_CHK_CURSOR       134
-#define IDS_CHK_GDI          135
+#define IDS_LBL_API          135
 #define IDS_MONITOR_ALL      136
 #define IDS_MONITOR_FMT      137  // "%d: %ldx%ld%ls"
 #define IDS_MONITOR_PRIMARY  138
@@ -40,6 +40,8 @@
 #define IDS_STATS_FPS_FMT    142   // "%.1f fps"
 #define IDS_STATS_SIZE_FMT   143   // "%.1f MB"
 #define IDS_STATS_AVG_FMT    144   // "平均 %.1f fps"
+#define IDS_API_DXGI         145
+#define IDS_API_GDI          146
 
 // Dialogs
 #define IDS_ERR_TITLE        150

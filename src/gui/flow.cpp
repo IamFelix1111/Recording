@@ -141,7 +141,7 @@ void onStart() {
             visualsShown = true;
             // Disable the session-fixed options (already snapshotted); the
             // live ones (cursor/path) stay enabled, mirroring Recording.
-            for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.chkGdi})
+            for (HWND h : {g.comboMonitor, g.comboFps, g.comboBitrate, g.comboApi})
                 EnableWindow(h, FALSE);
             EnableWindow(g.btnStart, FALSE);  // gray out while preparing
             EnableWindow(g.btnPause, FALSE);

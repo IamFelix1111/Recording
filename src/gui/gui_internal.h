@@ -21,7 +21,7 @@ constexpr int IDC_BITRATE = 1003;
 constexpr int IDC_PATH = 1004;
 constexpr int IDC_BROWSE = 1005;
 constexpr int IDC_CURSOR = 1006;
-constexpr int IDC_GDI = 1007;
+constexpr int IDC_API = 1007;  // capture API combo: DXGI (auto) / GDI
 constexpr int IDC_START = 1008;  // dual purpose: 开始 (idle) / 停止 (recording)
 constexpr int IDC_PAUSE = 1009;
 constexpr UINT WM_APP_FINISHED = WM_APP + 1;
@@ -52,6 +52,9 @@ constexpr int kFpsDefaultSel = 3;
 constexpr int kBitrateMbps[] = {0, 4, 8, 12, 20, 40};
 constexpr int kBitrateChoiceCount = 6;
 constexpr int kBitrateAutoSel = 0;
+// Capture-API combo: 0 = DXGI with automatic GDI fallback, 1 = forced GDI.
+constexpr int kApiSelDxgi = 0;
+constexpr int kApiSelGdi = 1;
 
 // UI state machine - drives the status dot color, icons and enabled controls.
 //   Ready --(开始)--> Preparing --ok--> Recording <--> Paused
@@ -70,7 +73,8 @@ struct App {
     HWND lblFps = nullptr, comboFps = nullptr;
     HWND lblBitrate = nullptr, comboBitrate = nullptr;
     HWND lblPath = nullptr, editPath = nullptr, btnBrowse = nullptr;
-    HWND chkCursor = nullptr, chkGdi = nullptr;
+    HWND chkCursor = nullptr;
+    HWND lblApi = nullptr, comboApi = nullptr;
     HWND btnStart = nullptr, btnPause = nullptr;  // btnStart toggles 开始/停止
     HWND stDot = nullptr, stStatus = nullptr;
     HWND stTime = nullptr, stFps = nullptr, stSize = nullptr;

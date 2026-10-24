@@ -32,7 +32,7 @@ RecorderSettings settingsFromUi() {
         s.outputPath += L".mp4";  // no extension: add one
     }
     s.drawCursor = (Button_GetCheck(g.chkCursor) == BST_CHECKED);
-    s.preferGdi = (Button_GetCheck(g.chkGdi) == BST_CHECKED);
+    s.preferGdi = (ComboBox_GetCurSel(g.comboApi) == kApiSelGdi);
     return s;
 }
 
@@ -65,7 +65,7 @@ void saveUiSettings() {
     swprintf(buf, 16, L"%d",
              Button_GetCheck(g.chkCursor) == BST_CHECKED ? 1 : 0);
     WritePrivateProfileStringW(L"Settings", L"DrawCursor", buf, ini.c_str());
-    swprintf(buf, 16, L"%d", Button_GetCheck(g.chkGdi) == BST_CHECKED ? 1 : 0);
+    swprintf(buf, 16, L"%d", ComboBox_GetCurSel(g.comboApi) == kApiSelGdi ? 1 : 0);
     WritePrivateProfileStringW(L"Settings", L"PreferGdi", buf, ini.c_str());
 }
 
@@ -97,9 +97,9 @@ void loadUiSettings() {
                     GetPrivateProfileIntW(L"Settings", L"DrawCursor", 1, ini.c_str())
                             ? BST_CHECKED
                             : BST_UNCHECKED);
-    Button_SetCheck(g.chkGdi,
-                    GetPrivateProfileIntW(L"Settings", L"PreferGdi", 0, ini.c_str())
-                            ? BST_CHECKED
-                            : BST_UNCHECKED);
+    ComboBox_SetCurSel(g.comboApi, GetPrivateProfileIntW(L"Settings", L"PreferGdi", 0,
+                                                          ini.c_str()) != 0
+                                       ? kApiSelGdi
+                                       : kApiSelDxgi);
     g.loading = false;
 }

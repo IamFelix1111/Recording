@@ -22,6 +22,9 @@
 * ##### Every Day Check Notes:
   * 2026-10-10: 本轮深审伴随托盘/瞬态实现：新增 `tray.cpp`（交互→`WM_COMMAND` 路由）、`onStart` 改后台线程初始化+消息泵（UI 不再冻结）、发现并修复 `ITaskbarList3` 静态引用未释放导致退出拖延 2–3.6s（`releaseTaskbarCom()`）
 
+* 将 API 复选框改为下拉框（GitHub Issue #1）
+  * Solution: 「使用 GDI 兼容后端」`BS_AUTOCHECKBOX`（`IDC_GDI`/`chkGdi`/`IDS_CHK_GDI`）改为「API」`CBS_DROPDOWNLIST`（`IDC_API`/`comboApi`/`IDS_LBL_API`，条目 `IDS_API_DXGI`「DXGI（自动回退）」/`IDS_API_GDI`「GDI（兼容）」，索引 `kApiSelDxgi=0`/`kApiSelGdi=1`），置于码率行右侧与显示器/帧率/码率风格一致；设置持久化沿用 `PreferGdi` 键（0=DXGI、1=GDI，旧配置自动映射无需迁移）；`WM_COMMAND` 归入 `CBN_SELCHANGE` 即改即存；录制/准备期与其他组合框一同禁用。E2E ALL GREEN；探针实测：下拉 2 项中文文本正确、ini `PreferGdi=1` 启动后选中 GDI 项
+
 * 录制时可以开放部分选项，如输出(如果可以直接改就直接改，不能直接改就最后再移动)和录制鼠标指针等
   * Solution: 鼠标开关**实时生效**——`IScreenCapture::setDrawCursor`，后端 `drawCursor_` 改 `std::atomic<bool>`，`RecorderSession::setDrawCursor` → `runLoop` 每帧应用；输出路径**不可直接改**（MF Sink 绑定 URL）→ `handleFinished` 时若路径已改则 `MoveFileExW` 移动成品（含建目录、失败弹窗回退旧路径）；`setUiRecording` 开放 鼠标复选/路径框/浏览，显示器/帧率/码率/GDI 保持禁用。实测：录制中三者状态正确、切鼠标不崩溃、改路径后文件落到 `Moved-*.mp4` 且无原名残留。**准备期**：控件本就可用（快照前改动无效仅持久化），会话建立时同步鼠标开关；准备超 10ms 显示视觉时同样禁用固定选项（与录制一致）
 * 托盘右键菜单加一项退出
